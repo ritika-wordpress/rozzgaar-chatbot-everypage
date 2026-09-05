@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rozzgaar Dashboard</title>
+    <style>
+        /* ... same styles as before ... */
+        :root {
+            --ink: #1D3557;
+            --bg: #EEF3F5;
+            --panel: #fff;
+            --accent: #E8734A;
+            --border: #E5E7EB;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: #1F2937;
+        }
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: var(--ink);
+            color: #fff;
+        }
+        .topbar strong { font-size: 16px; }
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .topbar-right .user-name {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .logout-btn {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
+        .content {
+            padding: 24px;
+            max-width: 760px;
+            margin: 0 auto;
+        }
+        .welcome {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .subtle {
+            color: #6B7280;
+            margin-bottom: 20px;
+        }
+        .stats {
+            display: flex;
+            gap: 14px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        .stat {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 20px;
+            min-width: 140px;
+            flex: 1;
+        }
+        .stat-num {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--ink);
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6B7280;
+        }
+        .section-hd {
+            font-weight: 700;
+            margin: 20px 0 10px;
+        }
+        .course-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .course-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        .course-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .course-meta {
+            font-size: 13px;
+            color: #6B7280;
+        }
+        .course-progress {
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .progress-bar {
+            flex: 1;
+            height: 6px;
+            background: #e5e7eb;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 3px;
+            transition: width 0.6s ease;
+        }
+        .progress-text {
+            font-size: 12px;
+            color: #6B7280;
+            min-width: 40px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            background: var(--panel);
+            border-radius: 12px;
+            border: 1px dashed var(--border);
+        }
+        .empty-state .emoji { font-size: 48px; margin-bottom: 12px; }
+        .empty-state h3 { color: var(--ink); margin-bottom: 8px; }
+        .empty-state p { color: #6B7280; font-size: 14px; }
+        #toastContainer {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 400px;
+        }
+        .toast {
+            padding: 14px 20px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            animation: slideInRight 0.4s ease-out;
+        }
+        .toast-success { background: #10b981; }
+        .toast-error { background: #ef4444; }
+        .toast-info { background: #3b82f6; }
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @media (max-width: 480px) {
+            .topbar { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+            .topbar-right { gap: 10px; }
+            .content { padding: 16px; }
+            .stats { flex-direction: column; }
+            .stat { min-width: unset; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <strong>Rozzgaar</strong>
+        <div class="topbar-right">
+            <span class="user-name" id="userNameDisplay">Welcome!</span>
+            <button class="logout-btn" id="logoutBtn">Logout</button>
+        </div>
+    </header>
+
+    <main class="content" id="dashMain">
+        <div class="welcome" id="welcomeLine">Welcome back!</div>
+        <div class="subtle">Here's what's happening with your account.</div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-num" id="enrolledCount">0</div>
+                <div class="stat-label">Enrolled Courses</div>
+            </div>
+            <div class="stat">
+                <div class="stat-num" id="completedCount">0</div>
+                <div class="stat-label">Completed</div>
+            </div>
+            <div class="stat">
+                <div class="stat-num" id="certificateCount">0</div>
+                <div class="stat-label">Certificates</div>
+            </div>
+        </div>
+
+        <div class="section-hd">My Enrolled Courses</div>
+        <div id="coursesList">
+            <div class="empty-state">
+                <div class="emoji">📚</div>
+                <h3>No courses yet</h3>
+                <p>Start your learning journey by enrolling in a course today!</p>
+            </div>
+        </div>
+
+        <div class="section-hd">Need help?</div>
+        <div class="subtle">
+            Ask the assistant in the bottom-right corner anything about this page,
+            your courses, or how Rozzgaar works — by typing or by voice.
+        </div>
+    </main>
+
+    <div id="toastContainer"></div>
+
+    <!-- Widget -->
+    <style>
+        #launcherBtn {
+            position: fixed; right: 24px; bottom: 24px; width: 58px; height: 58px;
+            border-radius: 50%; border: none; background: #E8734A; color: #fff;
+            font-size: 26px; line-height: 1; cursor: pointer; box-shadow: 0 10px 26px rgba(0,0,0,.28);
+            display: flex; align-items: center; justify-content: center; z-index: 9999;
+            transition: transform .15s ease;
+        }
+        #launcherBtn:hover { transform: scale(1.06); }
+        #launcherBtn.hidden { display: none; }
+        #widget {
+            position: fixed; right: 20px; bottom: 20px; width: 380px; height: 600px;
+            max-width: calc(100vw - 24px); max-height: calc(100vh - 24px);
+            z-index: 9998; background: #ECE5DD; border-radius: 14px; overflow: hidden;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.22); border: 1px solid rgba(0,0,0,0.06);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            flex-direction: column;
+            display: none;
+        }
+        #widget.open { display: flex; }
+        #langGate {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            padding: 24px; background: #ECE5DD; text-align: center;
+        }
+        #langGate[hidden] { display: none; }
+        #langGate .inner { width: 100%; display: flex; flex-direction: column; gap: 12px; }
+        #langGate .emoji { font-size: 40px; margin-bottom: 4px; }
+        #langGate .title { font-size: 14.5px; font-weight: 600; color: #1F2937; margin-bottom: 8px; line-height: 1.5; }
+        .lang-btn {
+            border: none; border-radius: 22px; padding: 12px 16px; font-size: 14.5px;
+            font-weight: 600; cursor: pointer; background: #E8734A; color: #fff;
+            transition: transform 0.2s;
+        }
+        .lang-btn:hover { transform: scale(1.02); filter: brightness(0.95); }
+        .lang-btn + .lang-btn { background: #fff; color: #C6551C; border: 1px solid #E8734A; }
+        #chatBody { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+        @media (max-width: 420px) {
+            #widget { right: 0; bottom: 0; left: 0; top: 0; width: 100%; height: 100%; max-width: 100%; max-height: 100%; border-radius: 0; }
+            #launcherBtn { right: 16px; bottom: 16px; }
+        }
+    </style>
+
+    <button type="button" id="launcherBtn" aria-label="Open Rozzgaar chat assistant">💬</button>
+
+    <div id="widget">
+        <div style="background:#E8734A; color:#fff; padding:12px 14px; display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-weight:600;">R</div>
+            <div style="flex:1;">
+                <div style="font-weight:600;font-size:14px;">Rozzgaar Assistant</div>
+                <div style="font-size:11px;opacity:.85;">Online</div>
+            </div>
+            <button type="button" id="minimizeBtn" title="Minimize" style="background:rgba(255,255,255,.18); border:none; color:#fff; width:26px; height:26px; border-radius:50%; cursor:pointer; font-size:13px;">➖</button>
+        </div>
+
+        <div id="langGate">
+            <div class="inner">
+                <div class="emoji">🤖</div>
+                <div class="title">Choose a language to continue<br>जारी रखने के लिए भाषा चुनें</div>
+                <button type="button" class="lang-btn" data-lang="en">Continue in English</button>
+                <button type="button" class="lang-btn" data-lang="hi">हिंदी में जारी रखें</button>
+            </div>
+        </div>
+
+        <div id="chatBody" hidden>
+            <div id="log" style="flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:4px; background:#ECE5DD;"></div>
+            <form id="inputBar" style="display:flex; gap:8px; padding:10px 12px; background:#fff; border-top:1px solid rgba(0,0,0,.06); flex-shrink:0;">
+                <input type="text" id="input" placeholder="Ask about this page..." autocomplete="off"
+                style="flex:1; padding:9px 12px; border-radius:18px; border:1px solid #E5E7EB; background:#F7F7F8; font-size:13.5px; outline:none;">
+                <button type="submit" id="widgetSendBtn" style="background:#E8734A; color:#fff; border:none; border-radius:50%; width:36px; height:36px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+                    <svg id="widgetSendIconTriangle" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 4.5v15l14-7.5-14-7.5z"/></svg>
+                    <svg id="widgetSendIconSquare" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:none;"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                </button>
+                <button type="button" id="micBtn" title="Click to talk"
+                style="background:#F1F0EE; color:#57534E; border:1px solid #E7E5E4; border-radius:50%; width:36px; height:36px; cursor:pointer; flex-shrink:0;">🎤</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        // ===================== Configuration =====================
+        // NOTE: do not redeclare `CONFIG` here — config.js already declares
+        // `const CONFIG` at top level, and since both are plain <script> tags
+        // sharing one global scope, a second `const CONFIG` throws a
+        // SyntaxError that silently kills this entire script block.
+        const API_BASE = window.CONFIG.API_BASE_URL || 'https://rozzgaar.in/apis';
+
+        // ===================== Authentication Check =====================
+        const accessToken = sessionStorage.getItem('access_token');
+        const userEmail = sessionStorage.getItem('user_email') || sessionStorage.getItem('registration_email');
+        const userName = sessionStorage.getItem('rzg_user_name');
+
+        if (!accessToken) {
+            // Redirect to real website login
+            window.location.href = window.CONFIG.LOGIN_URL || 'https://rozzgaar.in/login';
+        }
+
+        // Display user name
+        if (userName) {
+            document.getElementById("userNameDisplay").textContent = userName;
+            document.getElementById("welcomeLine").textContent = `Welcome back, ${userName}!`;
+        } else if (userEmail) {
+            document.getElementById("userNameDisplay").textContent = userEmail.split('@')[0];
+            document.getElementById("welcomeLine").textContent = `Welcome back!`;
+        }
+
+        // ===================== Toast Notifications =====================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+
+        // ===================== Logout =====================
+        document.getElementById('logoutBtn').addEventListener('click', async function() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/logout`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                if (response.ok) {
+                    showToast('Logged out successfully', 'success');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+
+            sessionStorage.clear();
+            localStorage.removeItem('verification_id');
+            
+            setTimeout(() => {
+                window.location.href = window.CONFIG.LOGIN_URL || 'https://rozzgaar.in/login';
+            }, 500);
+        });
+
+        // ===================== Load Dashboard Data =====================
+        async function loadDashboardData() {
+            try {
+                const response = await fetch(`${API_BASE}/user/enrollments`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch enrollments');
+                }
+
+                const data = await response.json();
+                
+                if (data.status === 'success' && data.data) {
+                    const enrollments = data.data;
+                    const enrolledCount = enrollments.length || 0;
+                    
+                    document.getElementById('enrolledCount').textContent = enrolledCount;
+                    
+                    const coursesList = document.getElementById('coursesList');
+                    if (enrolledCount > 0) {
+                        coursesList.innerHTML = '';
+                        enrollments.forEach(course => {
+                            const card = document.createElement('div');
+                            card.className = 'course-card';
+                            card.innerHTML = `
+                                <div class="course-title">${course.course_name || 'Course'}</div>
+                                <div class="course-meta">${course.course_category || 'General'} · ${course.progress || 0}% Complete</div>
+                                <div class="course-progress">
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: ${course.progress || 0}%"></div>
+                                    </div>
+                                    <span class="progress-text">${course.progress || 0}%</span>
+                                </div>
+                            `;
+                            coursesList.appendChild(card);
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+            }
+        }
+
+        loadDashboardData();
+
+        // ===================== Page Reader Assistant =====================
+        const CHAT_URL = window.CONFIG.CHAT_URL;
+
+        const launcherBtn = document.getElementById('launcherBtn');
+        const minimizeBtn = document.getElementById('minimizeBtn');
+        const widgetEl = document.getElementById('widget');
+        const langGate = document.getElementById('langGate');
+        const chatBody = document.getElementById('chatBody');
+        const logEl = document.getElementById('log');
+        const inputBar = document.getElementById('inputBar');
+        const chatInput = document.getElementById('input');
+        const micBtn = document.getElementById('micBtn');
+
+        let widgetSessionId = sessionStorage.getItem('rzg_session_id');
+        if (!widgetSessionId) {
+            widgetSessionId = crypto.randomUUID();
+            sessionStorage.setItem('rzg_session_id', widgetSessionId);
+        }
+        let widgetLang = 'en';
+        let widgetLangChosen = false;
+
+        function openWidget() {
+            widgetEl.classList.add('open');
+            launcherBtn.classList.add('hidden');
+            if (widgetLangChosen) chatInput.focus();
+        }
+        function closeWidget() {
+            widgetEl.classList.remove('open');
+            launcherBtn.classList.remove('hidden');
+            if (widgetStreamController) {
+                widgetStreamController.skip();
+            }
+        }
+        launcherBtn.addEventListener('click', openWidget);
+        minimizeBtn.addEventListener('click', closeWidget);
+
+        document.querySelectorAll('#langGate .lang-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                widgetLang = btn.dataset.lang || 'en';
+                widgetLangChosen = true;
+                langGate.hidden = true;
+                chatBody.hidden = false;
+                chatInput.focus();
+            });
+        });
+
+        const widgetSendBtn = document.getElementById('widgetSendBtn');
+        const widgetSendIconTriangle = document.getElementById('widgetSendIconTriangle');
+        const widgetSendIconSquare = document.getElementById('widgetSendIconSquare');
+        let widgetStreamController = null;
+
+        function setWidgetStopMode(active) {
+            if (!widgetSendBtn) return;
+            if (widgetSendIconTriangle) widgetSendIconTriangle.style.display = active ? 'none' : 'block';
+            if (widgetSendIconSquare) widgetSendIconSquare.style.display = active ? 'block' : 'none';
+            widgetSendBtn.title = active ? 'Stop' : 'Send';
+            widgetSendBtn.setAttribute('aria-label', active ? 'Stop' : 'Send');
+        }
+
+        // Reveal a bot reply gradually (word by word) instead of dropping the
+        // whole message in at once. While streaming, the send button turns
+        // into a stop button; clicking it (or minimizing the widget) instantly
+        // reveals the rest.
+        function streamLogText(bubble, text) {
+            const tokens = text.match(/\S+\s*/g) || [text];
+            let i = 0;
+            let finished = false;
+
+            const controller = {
+                skip() {
+                    if (finished) return;
+                    finished = true;
+                    bubble.textContent = text;
+                    logEl.scrollTop = logEl.scrollHeight;
+                    if (widgetStreamController === controller) {
+                        widgetStreamController = null;
+                        setWidgetStopMode(false);
+                    }
+                }
+            };
+
+            widgetStreamController = controller;
+            setWidgetStopMode(true);
+
+            function step() {
+                if (finished) return;
+                if (i >= tokens.length) {
+                    finished = true;
+                    if (widgetStreamController === controller) {
+                        widgetStreamController = null;
+                        setWidgetStopMode(false);
+                    }
+                    return;
+                }
+                bubble.textContent += tokens[i];
+                i += 1;
+                logEl.scrollTop = logEl.scrollHeight;
+                setTimeout(step, 28);
+            }
+            step();
+        }
+
+        if (widgetSendBtn) {
+            widgetSendBtn.addEventListener('click', (e) => {
+                if (widgetStreamController) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    widgetStreamController.skip();
+                }
+            });
+        }
+
+        function addLogMessage(text, who) {
+            const msg = document.createElement('div');
+            msg.style.maxWidth = '80%';
+            msg.style.padding = '8px 12px';
+            msg.style.borderRadius = '12px';
+            msg.style.fontSize = '13.5px';
+            msg.style.lineHeight = '1.4';
+            msg.style.whiteSpace = 'pre-wrap';
+            if (who === 'user') {
+                msg.style.alignSelf = 'flex-end';
+                msg.style.background = '#FFD9A8';
+                msg.style.color = '#3B2412';
+            } else {
+                msg.style.alignSelf = 'flex-start';
+                msg.style.background = '#fff';
+                msg.style.color = '#1B1B1B';
+                msg.style.border = '1px solid #E5E7EB';
+            }
+            logEl.appendChild(msg);
+            logEl.scrollTop = logEl.scrollHeight;
+            if (who === 'bot' && text) {
+                streamLogText(msg, text);
+            } else {
+                msg.textContent = text;
+            }
+            return msg;
+        }
+
+        function addTypingIndicator() {
+            const msg = document.createElement('div');
+            msg.style.alignSelf = 'flex-start';
+            msg.style.color = '#9C6B4F';
+            msg.style.fontSize = '13px';
+            msg.textContent = 'typing…';
+            logEl.appendChild(msg);
+            logEl.scrollTop = logEl.scrollHeight;
+            return msg;
+        }
+
+        async function sendWidgetMessage(text) {
+            addLogMessage(text, 'user');
+            const typingEl = addTypingIndicator();
+            try {
+                const res = await fetch(CHAT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        session_id: widgetSessionId,
+                        lang: widgetLang
+                    })
+                });
+                const data = await res.json();
+                typingEl.remove();
+                addLogMessage(data.reply, 'bot');
+
+                if (data.redirect === 'dashboard') {
+                    if (data.user_name) sessionStorage.setItem('rzg_user_name', data.user_name);
+                    if (data.access_token) sessionStorage.setItem('access_token', data.access_token);
+                    if (data.user_email) sessionStorage.setItem('user_email', data.user_email);
+                    setTimeout(() => window.location.reload(), 1500);
+                }
+            } catch (err) {
+                typingEl.remove();
+                addLogMessage("I'm having trouble connecting right now. Please try again in a moment.", 'bot');
+            }
+        }
+
+        inputBar.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+            chatInput.value = '';
+            sendWidgetMessage(text);
+        });
+
+        // Optional voice input (falls back to hiding the mic button if unsupported)
+        const WidgetSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (WidgetSpeechRecognition) {
+            const recognizer = new WidgetSpeechRecognition();
+            recognizer.continuous = false;
+            recognizer.interimResults = false;
+            micBtn.addEventListener('click', () => {
+                recognizer.lang = widgetLang === 'hi' ? 'hi-IN' : 'en-IN';
+                recognizer.start();
+            });
+            recognizer.addEventListener('result', (e) => {
+                const transcript = e.results[0][0].transcript;
+                chatInput.value = transcript;
+            });
+        } else {
+            micBtn.style.display = 'none';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Register - Rozzgaar</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <!-- Config loader -->
+    <script src="config.js"></script>
+    
+    <!-- Floating launcher icon -->
+    <button type="button" id="launcherBtn" class="launcher-btn" aria-label="Open Rozzgaar chat assistant">
+        <img src="assets/rozzgaar-icon.png" alt="" class="launcher-icon" />
+    </button>
+
+    <div class="app" id="app">
+        <header class="topbar">
+            <div class="brand">
+                <span class="brand-dot"><img src="assets/rozzgaar-icon.png" alt="Rozzgaar" class="brand-logo" /></span>
+                <div class="brand-text">
+                    <span class="brand-name" id="brandName">Saarthi</span>
+                    <span class="status" id="status"><span class="status-dot" id="statusDot"></span><span id="statusText">connecting…</span></span>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <button type="button" id="langToggleBtn" class="icon-btn small lang-toggle-btn" title="Switch to Hindi" aria-label="Switch to Hindi">हिं</button>
+                <button type="button" id="stopSpeakingBtn" class="icon-btn small stop-speaking-btn" title="Stop speaking" aria-label="Stop speaking" disabled>
+                    <svg class="speak-icon-triangle" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 4.5v15l14-7.5-14-7.5z"/></svg>
+                    <svg class="speak-icon-square" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/>
+                    </svg>
+                </button>
+                <button type="button" id="minimizeBtn" class="icon-btn small" title="Minimize">➖</button>
+            </div>
+        </header>
+
+        <!-- Persistent primary navigation: always stays at the top of the chatbot -->
+        <nav class="sticky-actions" id="stickyActions" aria-label="Chatbot quick actions">
+            <button type="button" id="stickyLoginBtn" class="sticky-action-btn">
+                🔑 Login
+            </button>
+            <button type="button" id="stickyRegisterBtn" class="sticky-action-btn">
+                📝 Register
+            </button>
+            <button type="button" id="stickyExploreBtn" class="sticky-action-btn">
+                📚 Explore
+            </button>
+        </nav>
+
+        <!-- Chat Body -->
+        <div class="chat-body" id="chatBody">
+            <!-- Chat Area -->
+            <main class="chat" id="chat"></main>
+
+            <!-- Composer -->
+            <form class="composer" id="composer">
+                <input
+                    type="text"
+                    id="input"
+                    placeholder="Type your message here…"
+                    autocomplete="off"
+                />
+                <button type="button" id="micBtn" class="icon-btn" title="Speak instead of typing">
+                    <svg class="mic-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M19 11a7 7 0 0 1-14 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M12 18v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button type="submit" class="send-btn" id="sendBtn" title="Send" aria-label="Send">
+                    <svg class="send-icon-triangle" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 4.5v15l14-7.5-14-7.5z"/></svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
