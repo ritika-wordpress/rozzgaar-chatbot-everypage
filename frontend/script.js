@@ -8,8 +8,8 @@
 const APP_CONFIG = window.CONFIG || {
     API_BASE_URL: 'https://rozzgaar.in/apis',
     OPEN_KEY: 'rzg_open_9f3c7b1a2e4d6f8091b2c3d4e5f60718',
-    CHAT_URL: 'https://chatbot.rozzgaar.in/chat',
-    TTS_URL: 'https://chatbot.rozzgaar.in/tts/speak',
+    CHAT_URL: 'http://localhost:8000/chat',
+    TTS_URL: 'http://localhost:8000/tts/speak',
     REDIRECT_URL: 'https://rozzgaar.in/applicant/',
     HANDOFF_URL: 'https://rozzgaar.in/chatbot-login.php',
     LOGIN_URL: 'https://rozzgaar.in/login'
@@ -102,6 +102,42 @@ const API_CONFIG = {
         document.getElementById("stickyExploreBtn");
 
 
+    // ===================== Safe Storage =====================
+    // sessionStorage access can throw a SecurityError in some browsers
+    // (private/incognito mode, strict cross-site tracking protection)
+    // when this script runs inside a third-party iframe, as it does when
+    // embedded via embed.js on rozzgaar.in. An unguarded throw here would
+    // halt the whole script before the launcher's click listener gets
+    // attached further down — so every storage call goes through this
+    // wrapper instead, falling back to an in-memory Map when storage is
+    // unavailable (session state just won't survive a page refresh in
+    // that case, but the widget still works).
+    const memoryStorageFallback = new Map();
+    const safeStorage = {
+        getItem(key) {
+            try {
+                return sessionStorage.getItem(key);
+            } catch (e) {
+                return memoryStorageFallback.has(key) ? memoryStorageFallback.get(key) : null;
+            }
+        },
+        setItem(key, value) {
+            try {
+                sessionStorage.setItem(key, value);
+            } catch (e) {
+                memoryStorageFallback.set(key, value);
+            }
+        },
+        removeItem(key) {
+            try {
+                sessionStorage.removeItem(key);
+            } catch (e) {
+                memoryStorageFallback.delete(key);
+            }
+        },
+    };
+
+
     // ===================== App State =====================
 
     let isOpen = false;
@@ -169,7 +205,7 @@ const API_CONFIG = {
     // ===================== Session Management =====================
 
     sessionId =
-        sessionStorage.getItem(
+        safeStorage.getItem(
             "rzg_session_id"
         );
 
@@ -179,7 +215,7 @@ const API_CONFIG = {
         sessionId =
             crypto.randomUUID();
 
-        sessionStorage.setItem(
+        safeStorage.setItem(
             "rzg_session_id",
             sessionId
         );
@@ -707,11 +743,29 @@ const API_CONFIG = {
 
                     btn.disabled = true;
 
+                    // Open a blank tab synchronously, inside the click
+                    // handler itself — this is the only way browsers
+                    // reliably allow a new-tab open. We fill in the real
+                    // payment URL once the backend responds (a window
+                    // opened *after* an async fetch resolves gets blocked
+                    // as a popup almost everywhere, which is why Enroll
+                    // could silently fail to redirect).
+                    let paymentWindow = null;
+
+                    try {
+                        paymentWindow =
+                            window.open("", "_blank");
+                    } catch (e) {
+                        // popup blocked outright — the fallback link
+                        // rendered alongside the reply still works.
+                    }
+
                     sendMessage(
-                        `__enroll__${course.slug}`,
+                        `__enroll__${course.kind || "course"}:${course.slug}`,
                         {
                             displayText:
                                 `Enroll me in "${course.title}"`,
+                            paymentWindow,
                         }
                     );
                 }
@@ -1442,14 +1496,14 @@ const API_CONFIG = {
 
 
         const showReg =
-            sessionStorage.getItem(
+            safeStorage.getItem(
                 "show_registration"
             ) === "true";
 
 
         if (showReg) {
 
-            sessionStorage.removeItem(
+            safeStorage.removeItem(
                 "show_registration"
             );
 
@@ -1484,7 +1538,7 @@ const API_CONFIG = {
             newLang;
 
 
-        sessionStorage.setItem(
+        safeStorage.setItem(
             LANG_STORAGE_KEY,
             newLang
         );
@@ -1653,7 +1707,7 @@ const API_CONFIG = {
 
                 if (data.user_name) {
 
-                    sessionStorage.setItem(
+                    safeStorage.setItem(
                         "rzg_user_name",
                         data.user_name
                     );
@@ -1664,6 +1718,8 @@ const API_CONFIG = {
                     window.location.href =
                         `${API_CONFIG.HANDOFF_URL}?ticket=${encodeURIComponent(
                             data.handoff_ticket
+                        )}&redirect=${encodeURIComponent(
+                            API_CONFIG.REDIRECT_URL
                         )}`;
 
                 } else {
@@ -1675,13 +1731,17 @@ const API_CONFIG = {
 
 
             // ================= PAYMENT =================
-            // The payment page lives on rozzgaar.in and requires the
-            // browser itself to be logged in there — a token that only
-            // lives in this chat's backend session doesn't do that. So we
-            // route through the same handoff ticket used for "go to
-            // dashboard", carrying the real payment URL as where to land
-            // afterward. Falls back to the raw URL if no ticket came back
-            // (e.g. user wasn't actually logged in server-side either).
+            // Send the user straight to the real checkout URL the backend
+            // built (rozzgaar.in/applicant/course-payment?type=...&id=...)
+            // — no handoff-ticket wrapping here, since that route isn't
+            // what actually lands on the correct payment page. Reuse the
+            // tab we pre-opened synchronously in the Enroll click handler
+            // when we have one (setting a window's location after the
+            // fact is allowed even though opening a *new* one isn't), and
+            // only fall back to a fresh window.open — which browsers may
+            // block since we're past the original click by now — if that
+            // pre-opened tab isn't available. The tappable link rendered
+            // alongside the reply is the reliable fallback either way.
 
             if (data.payment_url) {
 
@@ -1691,20 +1751,35 @@ const API_CONFIG = {
                 lastPaymentUrl =
                     data.payment_url;
 
-                const openUrl =
-                    data.handoff_ticket
-                        ? `${API_CONFIG.HANDOFF_URL}?ticket=${encodeURIComponent(
-                              data.handoff_ticket
-                          )}&redirect=${encodeURIComponent(
-                              data.payment_url
-                          )}`
-                        : data.payment_url;
+                let opened =
+                    false;
 
-                window.open(
-                    openUrl,
-                    "_blank",
-                    "noopener"
-                );
+                if (
+                    opts.paymentWindow &&
+                    !opts.paymentWindow.closed
+                ) {
+
+                    try {
+
+                        opts.paymentWindow.location.href =
+                            data.payment_url;
+
+                        opened =
+                            true;
+
+                    } catch (e) {
+                        // fall through to window.open / the link below
+                    }
+                }
+
+                if (!opened) {
+
+                    window.open(
+                        data.payment_url,
+                        "_blank",
+                        "noopener"
+                    );
+                }
 
                 const paymentStatus =
                     data.reply &&
@@ -1713,11 +1788,19 @@ const API_CONFIG = {
                         : "pending";
 
                 addPaymentLink(
-                    openUrl,
+                    data.payment_url,
                     paymentStatus
                 );
 
             } else {
+
+                if (
+                    opts.paymentWindow &&
+                    !opts.paymentWindow.closed
+                ) {
+
+                    opts.paymentWindow.close();
+                }
 
                 awaitingPayment =
                     false;
@@ -2098,7 +2181,7 @@ const API_CONFIG = {
      */
 
     const storedLang =
-        sessionStorage.getItem(
+        safeStorage.getItem(
             LANG_STORAGE_KEY
         ) || "en";
 
@@ -2172,4 +2255,4 @@ const API_CONFIG = {
     );
 
 
-})(); // end IIFE
+})(); 

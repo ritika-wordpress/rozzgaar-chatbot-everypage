@@ -1,4 +1,4 @@
-:root {
+.app, .launcher-btn {
   /* Single brand red (#C0392B) used throughout — header, buttons, active
      states, links, and the outgoing chat bubble. */
   --ink: #C0392B;          /* header bar, dark UI chrome, borders */
@@ -15,9 +15,9 @@
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-* { box-sizing: border-box; }
+.app, .app * { box-sizing: border-box; }
 
-body {
+.app {
   margin: 0;
   font-family: var(--font-body);
   background: transparent;
@@ -423,7 +423,7 @@ body {
   flex-shrink: 0;
 }
 
-#input {
+.app #input {
   flex: 1;
   font-size: 14px;
   padding: 9px 14px;
@@ -433,7 +433,7 @@ body {
   background: var(--bg);
   transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
 }
-#input:focus {
+.app #input:focus {
   border-color: var(--accent);
   background: var(--panel);
   box-shadow: 0 0 0 4px var(--accent-soft);
@@ -717,3 +717,755 @@ body {
 .msg .bubble { border-radius: 14px; border-top-left-radius: 14px; border-top-right-radius: 14px; }
 .msg.bot .bubble, .msg.user .bubble { border-top-left-radius: 14px; border-top-right-radius: 14px; }
 .msg.bot .bubble::before, .msg.user .bubble::before { display: none; }
+
+
+
+
+
+/**
+
+
+/* ---------------------------------------------------------------------
+   Scoped for no-iframe embedding. Everything below is rescoped under
+   #rzg-widget-root (the container div embed.js creates and appends
+   the widget markup into) so nothing here can ever apply to elements
+   on the host page (rozzgaar.in) itself — even if the host happens to
+   use the same class names (.app, .topbar, .chat, etc. are all very
+   common names in other people's CSS/React apps).
+
+   Two things that used to be genuinely global and are now fixed:
+     1. `:root { --ink: ...; }` -> `#rzg-widget-root { --ink: ...; }`
+        Custom properties only cascade DOWN to descendants, so scoping
+        them here means they can never override a same-named variable
+        the host page defines on its own :root/body.
+     2. `body { ... }` / `* { ... }` -> replaced with rules scoped to
+        #rzg-widget-root and its descendants only. The old `body`
+        rule was writing directly onto rozzgaar.in's real <body>
+        element once the iframe boundary was removed.
+--------------------------------------------------------------------- */
+
+#rzg-widget-root {
+  /* Single brand red (#C0392B) used throughout — header, buttons, active
+     states, links, and the outgoing chat bubble. */
+  --ink: #C0392B;          /* header bar, dark UI chrome, borders */
+  --ink-soft: #8E4A40;     /* muted red-brown — secondary text */
+  --bg: #ECE5DD;           /* WhatsApp's signature tan/beige chat wallpaper */
+  --panel: #FFFFFF;
+  --accent: #C0392B;       /* send button, active states — same red as --ink */
+  --accent-soft: #F7D9D5;  /* pale red — highlights */
+  --user-bubble: #FFFFFF;  /* same white as the bot bubble — user asked for */
+  --user-text: #1B1B1B;    /* both sides to look/read the same way. */
+  --bot-bubble: #FFFFFF;   /* white — incoming bubble, like WhatsApp */
+  --bot-text: #1B1B1B;
+  --radius: 10px;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* was: body { margin: 0; font-family: ...; background: transparent; color: ...; } */
+  font-family: var(--font-body);
+  color: var(--bot-text);
+}
+
+#rzg-widget-root,
+#rzg-widget-root * {
+  box-sizing: border-box; /* was: * { box-sizing: border-box; } (global) */
+}
+
+/* Fixed-size floating chat widget — same footprint everywhere it's used
+   (this page, or the dashboard's page-reader widget). Hidden by default;
+   the launcher icon toggles it open, the ➖ button minimizes it again. */
+#rzg-widget-root .widget-width { width: 380px; }
+#rzg-widget-root .widget-height { height: 560px; }
+
+#rzg-widget-root .app {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 380px;
+  height: 560px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  background: var(--bg);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 9998;
+  display: none; /* shown via .app.open */
+}
+#rzg-widget-root .app.open { display: flex; }
+
+/* Floating launcher icon */
+#rzg-widget-root .launcher-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: transform 0.15s ease;
+}
+#rzg-widget-root .launcher-icon { width: 34px; height: 34px; display: block; }
+#rzg-widget-root .launcher-btn:hover { transform: scale(1.06); }
+#rzg-widget-root .launcher-btn.hidden { display: none; }
+
+#rzg-widget-root .chat-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+#rzg-widget-root .topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  background: var(--ink);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+#rzg-widget-root .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+#rzg-widget-root .brand-dot {
+  height: 36px; width: 36px; padding: 5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+#rzg-widget-root .brand-logo { height: 100%; width: auto; display: block; }
+#rzg-widget-root .brand-text { display: flex; flex-direction: column; gap: 2px; }
+#rzg-widget-root .status { font-size: 11px; opacity: 0.85; display: inline-flex; align-items: center; gap: 5px; }
+#rzg-widget-root .status-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #9aa0a6; /* grey = offline/connecting */
+  flex-shrink: 0;
+}
+#rzg-widget-root .status.online .status-dot {
+  background: #2ecc71; /* green = online */
+  box-shadow: 0 0 4px rgba(46, 204, 113, 0.8);
+}
+#rzg-widget-root .status.online { color: #DFF5C4; }
+
+#rzg-widget-root .topbar-right { display: flex; align-items: center; gap: 8px; }
+
+/* Persistent Login / Register / Explore actions.
+   This row sits outside the scrolling chat area, so it remains visible
+   while messages, forms, and course cards scroll underneath it. */
+#rzg-widget-root .sticky-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid #E4D9CB;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 3;
+}
+
+#rzg-widget-root .sticky-action-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  border-radius: 18px;
+  padding: 7px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background .15s ease, color .15s ease, transform .15s ease;
+}
+
+#rzg-widget-root .sticky-action-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+#rzg-widget-root .sticky-action-btn:active:not(:disabled) {
+  transform: scale(.97);
+}
+
+#rzg-widget-root .sticky-action-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+#rzg-widget-root .sticky-action-btn:focus-visible {
+  outline: 3px solid var(--ink-soft);
+  outline-offset: 2px;
+}
+
+#rzg-widget-root .icon-btn.small {
+  width: 28px; height: 28px;
+  font-size: 13px;
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+#rzg-widget-root .icon-btn.small.muted { opacity: 0.4; }
+
+/* Header language toggle — switches the whole widget between EN/HI */
+#rzg-widget-root .lang-toggle-btn {
+  width: auto;
+  min-width: 30px;
+  padding: 0 10px;
+  border-radius: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+#rzg-widget-root .lang-toggle-btn:hover { background: rgba(255, 255, 255, 0.3); }
+#rzg-widget-root .lang-toggle-btn:active { transform: scale(0.94); }
+
+#rzg-widget-root .stop-speaking-btn {
+  width: 32px !important;
+  height: 32px !important;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  transition: transform .15s ease, background .15s ease, opacity .15s ease;
+}
+#rzg-widget-root .stop-speaking-btn svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  transition: transform .15s ease;
+}
+#rzg-widget-root .stop-speaking-btn:disabled {
+  opacity: .38;
+  cursor: default;
+}
+#rzg-widget-root .stop-speaking-btn:not(:disabled) {
+  opacity: 1;
+  cursor: pointer;
+}
+
+/* Idle (not speaking): white triangle. Speaking: white square (stop),
+   so it's obvious tapping it will stop the audio. Clicking the button,
+   or minimizing/closing the chat, instantly stops playback and snaps
+   the icon straight back to this idle triangle state. */
+#rzg-widget-root .stop-speaking-btn .speak-icon-square { display: none; }
+#rzg-widget-root .stop-speaking-btn.speaking .speak-icon-triangle { display: none; }
+#rzg-widget-root .stop-speaking-btn.speaking .speak-icon-square { display: block; }
+
+/* Actively speaking — strong pulsing ring + a beating icon so it's
+   unmissable that tapping it will stop the audio. */
+#rzg-widget-root .stop-speaking-btn.speaking {
+  background: rgba(255,255,255,0.24);
+  animation: stop-btn-glow 1.3s ease-in-out infinite;
+}
+#rzg-widget-root .stop-speaking-btn.speaking svg {
+  animation: stop-btn-beat 1.3s ease-in-out infinite;
+}
+#rzg-widget-root .stop-speaking-btn.speaking::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.55);
+  animation: stop-btn-ring 1.3s ease-out infinite;
+  pointer-events: none;
+}
+#rzg-widget-root .stop-speaking-btn { position: relative; }
+
+@keyframes stop-btn-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.35); }
+  50%      { box-shadow: 0 0 10px 3px rgba(255,255,255,0.55); }
+}
+@keyframes stop-btn-beat {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.3); }
+}
+@keyframes stop-btn-ring {
+  0%   { transform: scale(0.75); opacity: 0.9; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+#rzg-widget-root .stop-speaking-btn:not(:disabled):hover {
+  background: rgba(255,255,255,0.34);
+  transform: scale(1.14) rotate(-6deg);
+}
+#rzg-widget-root .stop-speaking-btn:not(:disabled):active {
+  transform: scale(.88);
+}
+
+#rzg-widget-root .reg-form {
+  margin: 10px 10px 0;
+  border: 1px solid #E4D9CB;
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#rzg-widget-root .reg-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--ink);
+  color: #fff;
+}
+#rzg-widget-root .reg-form-title { font-weight: 700; font-size: 12px; }
+#rzg-widget-root .reg-form-step { font-size: 10px; opacity: 0.85; }
+
+#rzg-widget-root .reg-form-body { padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+
+#rzg-widget-root .reg-field {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  background: var(--panel);
+  border: 1px solid transparent;
+  color: var(--ink-soft);
+}
+#rzg-widget-root .reg-field.pending { opacity: 0.55; }
+#rzg-widget-root .reg-field.done { color: var(--bot-text); }
+#rzg-widget-root .reg-field.done .reg-field-icon { color: #2E9E6C; font-weight: 700; }
+#rzg-widget-root .reg-field.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+#rzg-widget-root .reg-field-icon { text-align: center; font-size: 12px; }
+#rzg-widget-root .reg-field-label { white-space: nowrap; }
+#rzg-widget-root .reg-field-value {
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+#rzg-widget-root .reg-field.active .reg-field-value { color: var(--accent); }
+
+/* Faint repeating dot pattern over the wallpaper, like WhatsApp's chat background */
+#rzg-widget-root .chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: var(--bg);
+  background-image: radial-gradient(rgba(0,0,0,0.035) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+#rzg-widget-root .msg { display: flex; gap: 6px; align-items: flex-end; max-width: 82%; }
+#rzg-widget-root .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+
+#rzg-widget-root .avatar {
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  flex-shrink: 0;
+}
+
+/* Message bubble with a small WhatsApp-style tail */
+#rzg-widget-root .bubble {
+  position: relative;
+  padding: 7px 9px 8px;
+  border-radius: var(--radius);
+  font-size: 14.2px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+}
+
+#rzg-widget-root .msg.bot .bubble {
+  background: var(--bot-bubble);
+  color: var(--bot-text);
+  border-top-left-radius: 2px;
+}
+#rzg-widget-root .msg.bot .bubble::before {
+  content: "";
+  position: absolute;
+  left: -6px; top: 0;
+  width: 0; height: 0;
+  border-style: solid;
+  border-width: 0 8px 8px 0;
+  border-color: transparent var(--bot-bubble) transparent transparent;
+}
+
+#rzg-widget-root .dashboard-link {
+  display: inline-block;
+  margin-top: 2px;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+#rzg-widget-root .dashboard-link:hover { text-decoration: underline; }
+
+#rzg-widget-root .msg.user .bubble {
+  background: var(--user-bubble);
+  color: var(--user-text);
+  border-top-right-radius: 2px;
+}
+#rzg-widget-root .msg.user .bubble::before {
+  content: "";
+  position: absolute;
+  right: -6px; top: 0;
+  width: 0; height: 0;
+  border-style: solid;
+  border-width: 0 0 8px 8px;
+  border-color: transparent transparent var(--user-bubble) transparent;
+}
+
+#rzg-widget-root .msg.typing .bubble {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+#rzg-widget-root .dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--ink-soft);
+  animation: bounce 1.2s infinite;
+}
+#rzg-widget-root .dot:nth-child(2) { animation-delay: 0.15s; }
+#rzg-widget-root .dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+#rzg-widget-root .composer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid #E4D9CB;
+  background: var(--panel);
+  flex-shrink: 0;
+}
+
+#rzg-widget-root #input {
+  flex: 1;
+  font-size: 14px;
+  padding: 9px 14px;
+  border: 1px solid #E4D9CB;
+  border-radius: 20px;
+  outline: none;
+  background: var(--bg);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+#rzg-widget-root #input:focus {
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+#rzg-widget-root .send-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+#rzg-widget-root .send-btn:hover { filter: brightness(0.95); }
+#rzg-widget-root .send-btn .send-icon-triangle { width: 16px; height: 16px; display: block; }
+#rzg-widget-root .send-btn:focus-visible,
+#rzg-widget-root .icon-btn:focus-visible,
+#rzg-widget-root #input:focus-visible {
+  outline: 3px solid var(--ink-soft);
+  outline-offset: 2px;
+}
+
+#rzg-widget-root .icon-btn {
+  background: var(--bg);
+  border: none;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  font-size: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+#rzg-widget-root .icon-btn:hover { transform: scale(1.08); }
+#rzg-widget-root .icon-btn:active { transform: scale(0.94); }
+
+/* Mic idle — a gentle breathing cue that it's clickable */
+#rzg-widget-root #micBtn .mic-icon { transition: transform 0.2s ease; }
+#rzg-widget-root #micBtn:hover .mic-icon { transform: scale(1.1); }
+
+/* Mic actively listening — pulsing ring + bouncing icon */
+#rzg-widget-root .icon-btn.recording {
+  background: var(--accent-soft);
+  animation: mic-pulse-ring 1.4s ease-out infinite;
+}
+#rzg-widget-root .icon-btn.recording .mic-icon {
+  color: var(--accent);
+  animation: mic-bounce 1s ease-in-out infinite;
+}
+@keyframes mic-pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.45); }
+  70%  { box-shadow: 0 0 0 10px rgba(192, 57, 43, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0); }
+}
+@keyframes mic-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+#rzg-widget-root .mic-icon { width: 19px; height: 19px; }
+
+@media (max-width: 420px) {
+  #rzg-widget-root .sticky-actions {
+    padding: 7px 8px;
+    gap: 5px;
+  }
+
+  #rzg-widget-root .sticky-action-btn {
+    font-size: 11.5px;
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+
+  #rzg-widget-root .app {
+    right: 0; bottom: 0; left: 0; top: 0;
+    width: 100%; height: 100%;
+    max-width: 100%; max-height: 100%;
+    border-radius: 0;
+  }
+  #rzg-widget-root .launcher-btn { right: 16px; bottom: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #rzg-widget-root .dot { animation: none; }
+}
+
+/* Inline dropdown picker shown in chat for fields chosen from a fixed
+   list (state, district) instead of typed freely. */
+#rzg-widget-root .field-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+#rzg-widget-root .field-picker-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #E4D9CB;
+  border-radius: 8px;
+  font-size: 13.5px;
+  background: #fff;
+  color: var(--bot-text);
+  font-family: inherit;
+}
+#rzg-widget-root .field-picker-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+#rzg-widget-root .field-picker-btn {
+  align-self: flex-end;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 18px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#rzg-widget-root .field-picker-btn:hover:not(:disabled) { filter: brightness(0.95); }
+#rzg-widget-root .field-picker-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Quick-reply buttons (Login / Register / Explore, etc.) */
+#rzg-widget-root .quick-replies {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 4px 0 10px 0;
+  overflow-x: auto;
+}
+#rzg-widget-root .quick-reply-btn {
+  border: 1px solid var(--accent);
+  border-radius: 18px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#rzg-widget-root .quick-reply-btn:hover:not(:disabled) { background: var(--accent); color: #fff; }
+#rzg-widget-root .quick-reply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Course cards with an Enroll button */
+#rzg-widget-root .course-cards { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px 0; }
+#rzg-widget-root .course-card {
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--panel);
+}
+#rzg-widget-root .course-card-info { display: flex; flex-direction: column; gap: 2px; }
+#rzg-widget-root .course-card-title { font-size: 14px; font-weight: 600; color: var(--ink); }
+#rzg-widget-root .course-card-price { font-size: 12.5px; color: var(--bot-text); }
+#rzg-widget-root .course-card-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 16px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+}
+#rzg-widget-root .course-card-btn:hover:not(:disabled) { filter: brightness(0.95); }
+#rzg-widget-root .course-card-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Course payment status — shown after "Enroll" (pending, while we wait for
+   the user to pay on the real checkout page) and after "I've completed
+   payment" (confirmed success, or not-confirmed-yet). */
+#rzg-widget-root .payment-bubble {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#rzg-widget-root .payment-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+#rzg-widget-root .payment-link:hover { text-decoration: underline; }
+
+#rzg-widget-root .payment-badge {
+  display: inline-block;
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  position: relative;
+}
+
+/* Pending: a spinning ring while we're waiting on the checkout page. */
+#rzg-widget-root .payment-badge-pending,
+#rzg-widget-root .payment-badge-checking {
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: payment-spin 0.8s linear infinite;
+}
+
+/* Success: a small green check that pops in. */
+#rzg-widget-root .payment-badge-success {
+  background: #2E8B57;
+  animation: payment-pop 0.35s ease-out;
+}
+#rzg-widget-root .payment-badge-success::after {
+  content: "";
+  position: absolute;
+  left: 4px; top: 2px;
+  width: 5px; height: 8px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg);
+}
+
+/* Failure / not-confirmed-yet: an amber alert that gives a short shake to
+   draw the eye without being alarming. */
+#rzg-widget-root .payment-badge-fail {
+  background: #D97706;
+  animation: payment-shake 0.4s ease-in-out;
+}
+#rzg-widget-root .payment-badge-fail::after {
+  content: "!";
+  position: absolute;
+  inset: 0;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+@keyframes payment-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes payment-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  70% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes payment-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #rzg-widget-root .payment-badge-pending,
+  #rzg-widget-root .payment-badge-checking,
+  #rzg-widget-root .payment-badge-success,
+  #rzg-widget-root .payment-badge-fail { animation: none; }
+}
+
+/* A brief highlight pop on the bot's own bubble when it reports a
+   successful payment/enrollment — draws the eye to the good news. */
+#rzg-widget-root .payment-success-pop {
+  animation: payment-success-glow 1s ease-out;
+}
+@keyframes payment-success-glow {
+  0% { box-shadow: 0 0 0 0 rgba(46, 139, 87, 0.45); }
+  100% { box-shadow: 0 0 0 10px rgba(46, 139, 87, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #rzg-widget-root .payment-success-pop { animation: none; }
+}
+
+/* Keep user and bot messages visually consistent: same width behaviour,
+   padding, radius and shadow. Colour alone indicates who sent the message. */
+#rzg-widget-root .msg { width: fit-content; min-width: 0; }
+#rzg-widget-root .msg .bubble { border-radius: 14px; border-top-left-radius: 14px; border-top-right-radius: 14px; }
+#rzg-widget-root .msg.bot .bubble, #rzg-widget-root .msg.user .bubble { border-top-left-radius: 14px; border-top-right-radius: 14px; }
+#rzg-widget-root .msg.bot .bubble::before, #rzg-widget-root .msg.user .bubble::before { display: none; }
+
+
+**/
