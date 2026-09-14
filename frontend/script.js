@@ -102,42 +102,6 @@ const API_CONFIG = {
         document.getElementById("stickyExploreBtn");
 
 
-    // ===================== Safe Storage =====================
-    // sessionStorage access can throw a SecurityError in some browsers
-    // (private/incognito mode, strict cross-site tracking protection)
-    // when this script runs inside a third-party iframe, as it does when
-    // embedded via embed.js on rozzgaar.in. An unguarded throw here would
-    // halt the whole script before the launcher's click listener gets
-    // attached further down — so every storage call goes through this
-    // wrapper instead, falling back to an in-memory Map when storage is
-    // unavailable (session state just won't survive a page refresh in
-    // that case, but the widget still works).
-    const memoryStorageFallback = new Map();
-    const safeStorage = {
-        getItem(key) {
-            try {
-                return sessionStorage.getItem(key);
-            } catch (e) {
-                return memoryStorageFallback.has(key) ? memoryStorageFallback.get(key) : null;
-            }
-        },
-        setItem(key, value) {
-            try {
-                sessionStorage.setItem(key, value);
-            } catch (e) {
-                memoryStorageFallback.set(key, value);
-            }
-        },
-        removeItem(key) {
-            try {
-                sessionStorage.removeItem(key);
-            } catch (e) {
-                memoryStorageFallback.delete(key);
-            }
-        },
-    };
-
-
     // ===================== App State =====================
 
     let isOpen = false;
@@ -149,6 +113,15 @@ const API_CONFIG = {
     let currentAudio = null;
 
     let ttsAbortController = null;
+
+    // Lets the speaker button act as a real play/stop toggle: tapping it
+    // while speaking stops playback; tapping it again afterwards replays
+    // the same reply from the start, rather than doing nothing.
+    let isSpeaking = false;
+
+    let lastSpokenText = null;
+
+    let lastSpokenLang = null;
 
     let awaitingField = null;
 
@@ -205,7 +178,7 @@ const API_CONFIG = {
     // ===================== Session Management =====================
 
     sessionId =
-        safeStorage.getItem(
+        sessionStorage.getItem(
             "rzg_session_id"
         );
 
@@ -215,7 +188,7 @@ const API_CONFIG = {
         sessionId =
             crypto.randomUUID();
 
-        safeStorage.setItem(
+        sessionStorage.setItem(
             "rzg_session_id",
             sessionId
         );
@@ -661,6 +634,91 @@ const API_CONFIG = {
 
                 return btn;
             });
+
+        chat.appendChild(wrap);
+
+        chat.scrollTop =
+            chat.scrollHeight;
+    }
+
+
+    // ===================== Field Picker (Title / State / District) =====
+
+    function addFieldPicker(options) {
+
+        if (!options || !options.length)
+            return;
+
+        const wrap =
+            document.createElement("div");
+
+        wrap.className =
+            "field-picker";
+
+        const select =
+            document.createElement("select");
+
+        select.className =
+            "field-picker-select";
+
+        const placeholder =
+            document.createElement("option");
+
+        placeholder.value = "";
+        placeholder.textContent =
+            "Select…";
+        placeholder.disabled = true;
+        placeholder.selected = true;
+
+        select.appendChild(
+            placeholder
+        );
+
+        options.forEach((opt) => {
+
+            const o =
+                document.createElement("option");
+
+            o.value = opt.value;
+            o.textContent = opt.label;
+
+            select.appendChild(o);
+        });
+
+        const btn =
+            document.createElement("button");
+
+        btn.type = "button";
+        btn.className = "field-picker-btn";
+        btn.textContent = "Select";
+        btn.disabled = true;
+
+        select.addEventListener(
+            "change",
+            () => {
+                btn.disabled = !select.value;
+            }
+        );
+
+        btn.addEventListener(
+            "click",
+            () => {
+
+                if (isProcessing || !select.value)
+                    return;
+
+                select.disabled = true;
+                btn.disabled = true;
+
+                sendMessage(
+                    select.value,
+                    { displayText: select.options[select.selectedIndex].textContent }
+                );
+            }
+        );
+
+        wrap.appendChild(select);
+        wrap.appendChild(btn);
 
         chat.appendChild(wrap);
 
@@ -1170,17 +1228,24 @@ const API_CONFIG = {
     }
 
 
-    function setSpeakingUI(isSpeaking) {
+    function setSpeakingUI(speaking) {
+
+        isSpeaking =
+            speaking;
 
         if (!stopSpeakingBtn)
             return;
 
+        // Enabled as soon as there's something to (re)play, and stays
+        // enabled after speech ends or is stopped — that's what lets a
+        // second tap replay the same reply instead of the button going
+        // dead once speech finishes.
         stopSpeakingBtn.disabled =
-            !isSpeaking;
+            !lastSpokenText;
 
         stopSpeakingBtn.classList.toggle(
             "speaking",
-            isSpeaking
+            speaking
         );
     }
 
@@ -1194,6 +1259,12 @@ const API_CONFIG = {
 
         if (!text)
             return;
+
+        // Remembered BEFORE stopSpeaking() below runs, so the button is
+        // already re-enabled even while this new speech is starting up.
+        lastSpokenText = text;
+
+        lastSpokenLang = lang;
 
         stopSpeaking();
 
@@ -1329,7 +1400,16 @@ const API_CONFIG = {
 
         stopSpeakingBtn.addEventListener(
             "click",
-            stopSpeaking
+            () => {
+
+                // Toggle: stop if currently speaking; otherwise replay the
+                // last reply that was spoken, if there is one.
+                if (isSpeaking) {
+                    stopSpeaking();
+                } else if (lastSpokenText) {
+                    speak(lastSpokenText, lastSpokenLang);
+                }
+            }
         );
     }
 
@@ -1496,14 +1576,14 @@ const API_CONFIG = {
 
 
         const showReg =
-            safeStorage.getItem(
+            sessionStorage.getItem(
                 "show_registration"
             ) === "true";
 
 
         if (showReg) {
 
-            safeStorage.removeItem(
+            sessionStorage.removeItem(
                 "show_registration"
             );
 
@@ -1538,7 +1618,7 @@ const API_CONFIG = {
             newLang;
 
 
-        safeStorage.setItem(
+        sessionStorage.setItem(
             LANG_STORAGE_KEY,
             newLang
         );
@@ -1707,7 +1787,7 @@ const API_CONFIG = {
 
                 if (data.user_name) {
 
-                    safeStorage.setItem(
+                    sessionStorage.setItem(
                         "rzg_user_name",
                         data.user_name
                     );
@@ -1836,6 +1916,21 @@ const API_CONFIG = {
             }
 
 
+            // ================= FIELD PICKER =================
+            // For fields with a fixed/looked-up list (Title, State,
+            // District during registration), show a dropdown the user can
+            // pick from — on top of, not instead of, the text box below,
+            // so typing the answer out by hand still works exactly as
+            // before.
+
+            if (data.field_options && data.field_options.length) {
+
+                addFieldPicker(
+                    data.field_options
+                );
+            }
+
+
         } catch (err) {
 
             typingEl.remove();
@@ -1941,12 +2036,31 @@ const API_CONFIG = {
         let finalTranscript =
             "";
 
+        // The Web Speech API auto-stops listening after it detects a short
+        // silence, and that timeout isn't configurable — restarting
+        // automatically when it stops on its own (rather than the user
+        // tapping the mic to end it) is the only way to give people a
+        // little more time to speak, e.g. if they pause briefly to think.
+        let manualStop =
+            false;
+
+        let autoRestartsLeft =
+            0;
+
+        const MAX_AUTO_RESTARTS =
+            2;
+
 
         micBtn.addEventListener(
             "click",
             () => {
 
                 if (recording) {
+
+                    // User is deliberately ending it now — don't let
+                    // onend's auto-restart kick in after this.
+                    manualStop =
+                        true;
 
                     recognizer.stop();
 
@@ -1959,6 +2073,12 @@ const API_CONFIG = {
 
                 finalTranscript =
                     "";
+
+                manualStop =
+                    false;
+
+                autoRestartsLeft =
+                    MAX_AUTO_RESTARTS;
 
 
                 if (isEmailField()) {
@@ -2109,6 +2229,30 @@ const API_CONFIG = {
         recognizer.onend =
             () => {
 
+                // The browser stopped listening on its own (its internal
+                // silence timeout), not because the user tapped the mic to
+                // stop — restart automatically to give a bit more time to
+                // speak, instead of cutting off the moment they pause.
+                if (
+                    !manualStop &&
+                    autoRestartsLeft > 0
+                ) {
+
+                    autoRestartsLeft -= 1;
+
+                    try {
+
+                        recognizer.start();
+
+                        return;
+
+                    } catch (_) {
+                        // Already running, or genuinely can't restart —
+                        // fall through to the normal stop/cleanup below.
+                    }
+                }
+
+
                 recording =
                     false;
 
@@ -2181,7 +2325,7 @@ const API_CONFIG = {
      */
 
     const storedLang =
-        safeStorage.getItem(
+        sessionStorage.getItem(
             LANG_STORAGE_KEY
         ) || "en";
 
@@ -2255,4 +2399,4 @@ const API_CONFIG = {
     );
 
 
-})(); 
+})();

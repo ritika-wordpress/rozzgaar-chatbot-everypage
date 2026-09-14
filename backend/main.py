@@ -53,6 +53,7 @@ import lang_utils
 import session_store
 import ticket_store
 import rozzgaar_api
+import static_content
 import tts
 
 # Shared secret between this backend and rozzgaar.in's chatbot-login.php.
@@ -90,6 +91,108 @@ FIELD_LABELS = {
 }
 
 MASKED_FIELDS = {"password", "login_password"}
+
+# Title/State/District are offered as a tappable, choosable list alongside
+# the normal text box — not instead of it. Typing still works (free text
+# still goes through llm.flow_step's validation, same as ever); this just
+# gives low-literacy / mobile users something to pick from instead of
+# having to spell out a state or district by hand.
+SALUTATION_OPTIONS = [
+    {"value": "Mr", "label": "Mr"},
+    {"value": "Mrs", "label": "Mrs"},
+    {"value": "Ms", "label": "Ms"},
+    {"value": "Dr", "label": "Dr"},
+]
+
+
+def _options_from_api_list(data) -> list[dict] | None:
+    """Normalize whatever shape the real Rozzgaar API hands back for a
+    states/districts list (a plain list of strings, or a list of
+    {"name"/"state"/"district": ...} objects) into a flat
+    [{"value", "label"}, ...] the frontend picker can render directly."""
+    if not data:
+        return None
+    options = []
+    for item in data:
+        if isinstance(item, str):
+            label = item
+            value = item
+        elif isinstance(item, dict):
+            label = (
+                item.get("name") or item.get("state") or
+                item.get("district") or item.get("label") or item.get("title")
+            )
+            value = item.get("value", label)
+        else:
+            continue
+        if label:
+            options.append({"value": value, "label": label})
+    return options or None
+
+
+# Small in-memory cache so re-asking (an invalid district, a page that
+# re-renders the same step, etc.) doesn't hit the real Rozzgaar API again
+# for a list that basically never changes within a session.
+_states_cache: list[dict] | None = None
+_districts_cache: dict[str, list[dict] | None] = {}
+
+
+# Fields answered via a real, API-backed picker list rather than free
+# typing (salutation is a fixed list; state/district come live from
+# rozzgaar.in's own /misc/states and /misc/districts). These get matched
+# directly against that real list — see _match_picker_option — instead of
+# being sent to the generic LLM validator in llm.flow_step, which has no
+# idea what the actual state/district names are and can wrongly accept or
+# reject a perfectly valid tap.
+PICKER_FIELDS = {"salutation", "state", "district"}
+
+
+def _match_picker_option(message: str, options: list[dict]) -> str | None:
+    """Case/whitespace-tolerant match of the user's message (a tap sends
+    the option's value/label verbatim; a typed answer might differ in
+    case) against the real options list. Returns the canonical value to
+    store, or None if it matches nothing on the list."""
+    text = (message or "").strip().lower()
+    if not text:
+        return None
+    for opt in options:
+        value, label = str(opt.get("value", "")), str(opt.get("label", ""))
+        if value.strip().lower() == text or label.strip().lower() == text:
+            return opt.get("value") or opt.get("label")
+    return None
+
+
+def _field_options(field: str | None, state: dict) -> list[dict] | None:
+    """Fixed/looked-up choices for the field currently being asked, or None
+    for any field with no such list (free typing is the only way to answer
+    those, same as before)."""
+    global _states_cache
+
+    if field == "salutation":
+        return SALUTATION_OPTIONS
+
+    if field == "state":
+        if _states_cache is None:
+            try:
+                _states_cache = _options_from_api_list(rozzgaar_api.list_states())
+            except ValueError:
+                return None  # Real API unreachable — fall back to free typing.
+        return _states_cache
+
+    if field == "district":
+        state_value = (state.get("collected") or {}).get("state")
+        if not state_value:
+            return None
+        if state_value not in _districts_cache:
+            try:
+                _districts_cache[state_value] = _options_from_api_list(
+                    rozzgaar_api.list_districts(state_value)
+                )
+            except ValueError:
+                return None
+        return _districts_cache[state_value]
+
+    return None
 
 # Buttons shown after a greeting / when we're not sure what the user wants —
 # these send a fixed, plain message exactly as if the user had typed it, so
@@ -150,7 +253,10 @@ PAYMENT_QUICK_REPLIES = [
 # ALWAYS wins over whatever flow happens to still be active in this session
 # (e.g. a stale registration left over from before a page refresh), instead
 # of being silently swallowed as an answer to whatever field was last asked.
-MENU_COMMANDS = {"login", "register", "explore rozzgaar", "show me all courses", "show me all bundles", "show my enrollments"}
+MENU_COMMANDS = {
+    "login", "register", "explore rozzgaar", "show me all courses", "show me all bundles",
+    "show my enrollments", "about rozzgaar", "contact rozzgaar", "verify certificate",
+}
 
 # Password prompts are NEVER phrased by the LLM. Asking a model to generate
 # "ask the user for their password" can (rarely, especially in Hindi) get
@@ -219,6 +325,9 @@ class ChatResponse(BaseModel):
     user_name: str | None = None       # logged-in user's name, sent alongside a "dashboard" redirect
     logged_in: bool = False            # whether this session currently has a real access_token
     quick_replies: list[dict] | None = None  # [{"label": "...", "message": "..."}] buttons to show
+    field_options: list[dict] | None = None  # [{"value": "...", "label": "..."}] choosable list for
+                                              # the field named in awaiting_field (e.g. Title/State/
+                                              # District) — shown alongside, not instead of, the text box
     courses: list[dict] | None = None  # [{"slug", "title", "price"}] cards to show, with an Enroll button
     payment_url: str | None = None     # real Rozzgaar checkout URL to send the user to right now
     handoff_ticket: str | None = None  # one-time ticket for rozzgaar.in/chatbot-login.php, sent
@@ -489,6 +598,20 @@ def _advance_after_field(session_id: str, state: dict, message: str):
     order = FIELD_ORDER[flow]
 
     if state.get("editing_from_review"):
+        # District is scoped to state (the picker list itself comes from
+        # /misc/districts?state=...), so a district picked under the OLD
+        # state no longer makes sense once state changes here. Don't just
+        # bounce back to the review screen with a stale district — make
+        # the user re-pick district for the new state first, then return
+        # to review once that's done.
+        if flow == "register" and step == "state":
+            state["mode"], state["step"] = "ask", "district"
+            reply = llm.phrase_message(
+                "Acknowledge the state change, then ask again for "
+                f"{llm.FIELD_PROMPTS.get('district', 'district')}, since it needs to match the new state.",
+                context=message, forced_lang=forced_lang,
+            )
+            return reply, _awaiting("district", "ask"), None
         state["editing_from_review"] = False
         state["mode"], state["step"] = "review", None
         return _build_review_message(state, message), "review_confirm", None
@@ -685,6 +808,26 @@ def _continue_flow(session_id: str, state: dict, message: str):
             state["pending_value"] = None
             return _advance_after_field(session_id, state, message)
 
+        # Salutation/state/district are answered from a real, API-backed
+        # picker list — matched directly against that list rather than
+        # guessed by the generic LLM validator (see PICKER_FIELDS above).
+        if step in PICKER_FIELDS:
+            options = _field_options(step, state)
+            if options:
+                matched = _match_picker_option(message, options)
+                if matched is None:
+                    reply = llm.phrase_message(
+                        f"Tell the user that's not one of the choices shown and ask them "
+                        f"again for {llm.FIELD_PROMPTS.get(step, step)}, picking from the list.",
+                        context=message, forced_lang=forced_lang,
+                    )
+                    return reply, _awaiting(step, "ask"), None
+                state["collected"][step] = matched
+                state["pending_value"] = None
+                return _advance_after_field(session_id, state, message)
+            # Real list unreachable right now — fall through to the
+            # generic LLM validator below so free typing still works.
+
         # Email addresses are handled deterministically, not by the LLM.
         # Speech recognition often produces "name dot test at gmail dot com".
         if step in ("email", "identifier"):
@@ -817,17 +960,77 @@ def _handle_site_overview(message: str, forced_lang: str | None = None):
     bundles = _extract(bundle_data, "bundles")
 
     if not courses and not bundles:
-        return (
-            "Sorry, I couldn't fetch site information right now. Please check rozzgaar.in "
-            "directly, or try again shortly."
-        ), []
+        # The real course/bundle API is down (or genuinely returned nothing)
+        # — fall back to crawling rozzgaar.in's own static pages (home/
+        # about/contact) so Explore still says something real instead of a
+        # flat "couldn't fetch" error. See static_content.py.
+        try:
+            static_text = static_content.get_static_site_text()
+        except ValueError:
+            return (
+                "Sorry, I couldn't fetch site information right now. Please check rozzgaar.in "
+                "directly, or try again shortly."
+            ), []
+        reply = llm.summarize_static_overview(message, static_text, forced_lang=forced_lang)
+        return reply, []
 
     reply = llm.summarize_site_overview(message, courses, bundles, forced_lang=forced_lang)
-    # Small preview, not the whole catalogue — enough to tap "Enroll" on
-    # right away; "Explore"/"Bundles" (the dedicated buttons) still show
-    # everything if they want the full list.
-    preview = _item_cards(courses[:3], kind="course") + _item_cards(bundles[:2], kind="bundle")
-    return reply, preview
+    # "Explore" is just a short spoken/written summary of the site now —
+    # no tappable course/bundle cards underneath. The user can still type
+    # "all courses" / "all bundles" (or tap those dedicated buttons) to
+    # get the full, card-based list.
+    return reply, []
+
+
+def _handle_site_question(message: str, forced_lang: str | None = None):
+    """Catch-all for real questions about Rozzgaar that aren't a specific
+    course/bundle lookup or an account action — company info, certifying
+    bodies, contact details, policies, and anything else genuinely unclear
+    that might still be answerable from the site. Answers ONLY from text
+    crawled directly off rozzgaar.in (see static_content.py) — never
+    invented, so a wrong/missing answer just means "not on the site"."""
+    try:
+        site_text = static_content.get_static_site_text()
+    except ValueError:
+        return (
+            "Sorry, I couldn't check rozzgaar.in for that right now. Please try again "
+            "shortly, or check the site directly."
+        ), []
+    reply = llm.answer_from_site(message, site_text, forced_lang=forced_lang)
+    return reply, []
+
+
+# A certificate number looks like RZG-CERT-XXXXXXXX, but users may type it
+# bare, paste it with surrounding text ("please verify RZG-CERT-12345678"),
+# or (via voice) with odd spacing/casing — pull out the hyphenated
+# alphanumeric token rather than assuming the whole message is the number.
+CERTIFICATE_NUMBER_PATTERN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+){1,4}")
+
+
+def _extract_certificate_number(text: str) -> str:
+    match = CERTIFICATE_NUMBER_PATTERN.search(text or "")
+    return (match.group(0) if match else (text or "").strip()).upper()
+
+
+def _handle_verify_certificate(message: str, certificate_number: str, forced_lang: str | None = None):
+    """Looks up a certificate number against the real, public /quiz/verify
+    endpoint (open_key only, no login needed — same as course browsing).
+    This is a real per-certificate lookup, never guessed from static site
+    text, since only the API actually knows if a given number is genuine."""
+    try:
+        data = rozzgaar_api.verify_certificate(certificate_number)
+    except ValueError as e:
+        # The API's own message (e.g. "Certificate not found") is already
+        # written to be user-facing — same pattern as login/register errors.
+        reply = llm.phrase_message(
+            f"Tell the user the certificate number '{certificate_number}' could not be "
+            f"verified, for this reason: '{e}'. Ask them to double check the number printed "
+            "at the bottom of the certificate (or from the QR code) and try again.",
+            context=message, forced_lang=forced_lang,
+        )
+        return reply, []
+    reply = llm.summarize_certificate_verification(message, data, forced_lang=forced_lang)
+    return reply, []
 
 
 def _handle_bundle_info(message: str, forced_lang: str | None = None):
@@ -994,6 +1197,16 @@ def chat(req: ChatRequest):
                 )
                 awaiting = _awaiting("identifier", "ask")
 
+        # --- We already asked "what's your certificate number?" — this
+        # message is the answer to THAT, not a new request, so it's handled
+        # directly rather than through intent classification (which would
+        # otherwise have no idea a certificate number was expected).
+        elif not state["flow"] and state.get("awaiting_certificate_number"):
+            state["awaiting_certificate_number"] = False
+            cert_number = _extract_certificate_number(message)
+            reply, course_cards = _handle_verify_certificate(message, cert_number, forced_lang=forced_lang)
+            quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+
         elif state["flow"]:
             reply, awaiting, redirect = _continue_flow(req.session_id, state, message)
             logged_in = bool(state.get("token"))
@@ -1018,9 +1231,54 @@ def chat(req: ChatRequest):
             # rather than via the LLM classifier, since they're precise
             # button labels, not free text a user typed.
             if message.strip().lower() == "explore rozzgaar":
+                # No buttons of any kind on this reply — Login/Register/
+                # Explore are already sticky at the top of the widget, so
+                # repeating them (or a course/bundle card row) here would
+                # just be redundant. The overview reply itself (in words)
+                # already points the user at courses, bundles, and
+                # everything else on the site; from here they can just
+                # type what they want ("all courses", "verify my
+                # certificate", "contact details"...) and the classifier
+                # below routes it, the same as if they'd typed it unprompted.
                 reply, course_cards = _handle_site_overview(message, forced_lang=forced_lang)
+                quick_replies = []
+                awaiting = None
+
+            elif message.strip().lower() == "show me all courses":
+                reply, course_cards = _handle_course_info("", message, forced_lang=forced_lang)
                 quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
                 awaiting = None
+
+            elif message.strip().lower() == "show me all bundles":
+                reply, course_cards = _handle_bundle_info(message, forced_lang=forced_lang)
+                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                awaiting = None
+
+            elif message.strip().lower() == "about rozzgaar":
+                reply, course_cards = _handle_site_question(
+                    "Tell me about Rozzgaar — what it is, who runs it, and what it offers.",
+                    forced_lang=forced_lang,
+                )
+                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                awaiting = None
+
+            elif message.strip().lower() == "contact rozzgaar":
+                reply, course_cards = _handle_site_question(
+                    "What are Rozzgaar's contact details — email, address, and office hours?",
+                    forced_lang=forced_lang,
+                )
+                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                awaiting = None
+
+            elif message.strip().lower() == "verify certificate":
+                state["awaiting_certificate_number"] = True
+                reply = llm.phrase_message(
+                    "Ask the user for their certificate number, which is printed at the "
+                    "bottom of their Rozzgaar certificate (or found by scanning its QR code).",
+                    context=message, forced_lang=forced_lang,
+                )
+                awaiting = "certificate_number"
+                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
 
             elif message.strip().lower() == "show my enrollments":
                 if not logged_in:
@@ -1053,7 +1311,7 @@ def chat(req: ChatRequest):
                 route = llm.classify_intent(message, forced_lang=forced_lang)
                 kind = route.get("type", "unclear")
 
-                if kind in ("greeting", "about_bot", "unclear"):
+                if kind in ("greeting", "about_bot"):
                     reply, awaiting = route.get("reply", "Could you say that again?"), None
                     quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
 
@@ -1077,8 +1335,31 @@ def chat(req: ChatRequest):
                     reply, course_cards = _handle_bundle_info(message, forced_lang=forced_lang)
                     awaiting = None
 
+                elif kind == "verify_certificate":
+                    cert_number = _extract_certificate_number(route.get("certificate_number", "") or "")
+                    if cert_number:
+                        reply, course_cards = _handle_verify_certificate(message, cert_number, forced_lang=forced_lang)
+                        awaiting = None
+                    else:
+                        state["awaiting_certificate_number"] = True
+                        reply = llm.phrase_message(
+                            "Ask the user for their certificate number, which is printed at "
+                            "the bottom of their Rozzgaar certificate (or found by scanning "
+                            "its QR code).",
+                            context=message, forced_lang=forced_lang,
+                        )
+                        awaiting = "certificate_number"
+
                 else:
-                    reply, awaiting = "Could you say that again in your own words?", None
+                    # "site_question" (a real question about Rozzgaar that isn't a
+                    # course/bundle lookup or account action) and "unclear" (anything
+                    # the classifier couldn't place at all) both fall back to the same
+                    # handler: try to answer using real content crawled straight off
+                    # rozzgaar.in, rather than an immediate "I don't understand" — see
+                    # _handle_site_question().
+                    reply, course_cards = _handle_site_question(message, forced_lang=forced_lang)
+                    awaiting = None
+                    quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
 
         # Voice language: if the user picked a language at the gate, use
         # that directly rather than re-detecting from the reply text (which
@@ -1107,6 +1388,7 @@ def chat(req: ChatRequest):
             user_name=state.get("name") if redirect == "dashboard" else None,
             logged_in=bool(state.get("token")),
             quick_replies=quick_replies,
+            field_options=_field_options(awaiting, state),
             courses=course_cards,
             payment_url=payment_url,
             handoff_ticket=handoff_ticket,

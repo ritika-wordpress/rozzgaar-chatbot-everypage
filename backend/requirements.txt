@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 requests
+beautifulsoup4
 groq
 langdetect
 python-dotenv

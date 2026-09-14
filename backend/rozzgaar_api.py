@@ -17,6 +17,16 @@ OPEN_KEY = os.getenv("ROZZGAAR_OPEN_KEY", "")
 TIMEOUT = 15
 
 
+class FeatureNotAvailable(Exception):
+    """Raised by a wrapper function for a site feature that main.py/the
+    chat flow refers to but that doesn't have a real Rozzgaar endpoint
+    wired up yet (either it doesn't exist on the real API, or nobody's
+    confirmed the real path/contract for it). Callers should catch this
+    and tell the user the feature is still being set up, instead of
+    letting it bubble up as an unhandled 500."""
+    pass
+
+
 def _request(method, path, token=None, json_body=None, params=None):
     """
     Every Rozzgaar endpoint needs a Bearer token: either the shared public
@@ -111,6 +121,19 @@ def contact_form(name, mobile, email, subject, message):
         "name": name, "mobile": mobile, "email": email,
         "subject": subject, "message": message,
     })
+
+
+def verify_certificate(certificate_number):
+    """main.py's _handle_verify_certificate refers to a real, public
+    /quiz/verify endpoint, but no such endpoint has actually been
+    confirmed/wired up here yet — calling this used to crash with
+    AttributeError instead of failing gracefully. Raises
+    FeatureNotAvailable so the chat flow can tell the user this feature
+    is still being set up. Once the real endpoint + path are confirmed,
+    replace this with an actual `_request(...)` call like the other
+    functions above.
+    """
+    raise FeatureNotAvailable("Certificate verification isn't connected to a live Rozzgaar endpoint yet.")
 
 
 # --- Logged-in user info (needs a real access token) ---------------------

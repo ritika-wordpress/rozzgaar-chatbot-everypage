@@ -8,12 +8,12 @@ const CONFIG = {
     },
 
     get CHAT_URL() {
-        return 'https://chatbot.rozzgaar.in/chat';
+        return 'http://127.0.0.1:8000/chat';
 
     },
 
     get TTS_URL() {
-        return 'https://chatbot.rozzgaar.in/tts/speak';
+        return 'http://127.0.0.1:8000/tts/speak';
 
     },
 
@@ -30,11 +30,11 @@ const CONFIG = {
     },
 
     get LOGIN_URL() {
-        return 'index.html';
+        return 'https://rozzgaar.in/login';
     },
 
     get REGISTER_URL() {
-        return 'index.html';
+        return 'https://rozzgaar.in/register';
     },
 
     EXCLUDED_PAGES: [

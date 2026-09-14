@@ -135,29 +135,53 @@ def _extract_json(text: str):
     return None
 
 
+def _strip_markdown(text: str) -> str:
+    """Strip Markdown formatting an LLM sometimes adds out of habit (bold/
+    italic asterisks or underscores, backtick code spans, heading '#'
+    marks) even when told not to. The chat UI here renders plain text, not
+    Markdown, so left in, these show up literally as stray *, **, ***, or
+    ` characters in the bubble — this is a safety net so users never see
+    that regardless of what a given provider/model returns."""
+    if not text:
+        return text
+    text = re.sub(r"\*{1,3}(\S.*?\S|\S)\*{1,3}", r"\1", text)
+    text = re.sub(r"__(\S.*?\S|\S)__", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"^\s{0,3}#{1,6}\s+", "", text, flags=re.MULTILINE)
+    return text
+
+
 def _chat(messages, temperature=0.2, json_mode=False):
     result = _call_groq(messages, temperature, json_mode)
     if result:
-        return result
+        return result if json_mode else _strip_markdown(result)
     print("[llm] Groq exhausted, trying Hugging Face...")
     result = _call_huggingface(messages, temperature, json_mode)
     if result:
-        return result
+        return result if json_mode else _strip_markdown(result)
     print("[llm] Hugging Face unavailable, trying local Ollama...")
     result = _call_ollama(messages, json_mode)
     if result:
-        return result
+        return result if json_mode else _strip_markdown(result)
     raise RuntimeError("All configured free providers (Groq, Hugging Face, Ollama) are unavailable right now.")
 
 
 def _parse_json_reply(raw, fallback_type="unclear", fallback_reply="Sorry, could you say that again?"):
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
         parsed = _extract_json(raw)
-        if parsed:
-            return parsed
-        return {"type": fallback_type, "reply": fallback_reply}
+        if not parsed:
+            return {"type": fallback_type, "reply": fallback_reply}
+    # Same Markdown safety net as _chat()'s plain-text path, applied here
+    # to the user-facing text fields inside an LLM's JSON reply (flow_step's
+    # "message", classify_intent's "reply", etc.) — json_mode calls skip
+    # the _chat()-level stripping since that would risk mangling JSON
+    # syntax itself, so it happens here instead, after parsing.
+    for key in ("message", "reply"):
+        if isinstance(parsed.get(key), str):
+            parsed[key] = _strip_markdown(parsed[key])
+    return parsed
 
 
 def _lang_instruction(forced_lang: str | None = None) -> str:
@@ -203,6 +227,8 @@ def classify_intent(user_message: str, forced_lang: str | None = None) -> dict:
       {"type": "forgot_password", "reply": "..."}
       {"type": "course_info",     "search_term": "<short keyword or empty string for 'show all'>"}
       {"type": "bundle_info",     "reply": "..."}
+      {"type": "verify_certificate", "certificate_number": "<... or empty string>"}
+      {"type": "site_question"}
       {"type": "unclear",         "reply": "..."}
     """
     system = (
@@ -227,7 +253,15 @@ def classify_intent(user_message: str, forced_lang: str | None = None) -> dict:
         "site content.\n"
         '- "bundle_info": asking specifically about course BUNDLES / combo packs / package '
         "deals (multiple courses sold together) rather than a single course.\n"
-        '- "unclear": you genuinely cannot tell what they want.\n\n'
+        '- "verify_certificate": wants to verify/check whether a certificate is genuine, '
+        "asks how to verify one, or is giving a certificate number to check (it usually "
+        "looks like RZG-CERT-XXXXXXXX, but may be typed/spoken with odd spacing).\n"
+        '- "site_question": any other real question about Rozzgaar itself — company info '
+        "(who runs it, UFS Digital), certifying bodies (NCVET, MEPSC), refund/privacy/terms "
+        "policies, office address, contact details, office hours, WhatsApp support, "
+        "whether the site/certificates are legitimate, or anything else about the site that "
+        "isn't a course/bundle lookup or an account action.\n"
+        '- "unclear": you genuinely cannot tell what they want, even loosely.\n\n'
         "Respond with JSON ONLY, no other text, no markdown fences:\n"
         '- greeting/about_bot/unclear: {"type": "...", '
         '"reply": "<short warm 1-3 sentence reply in English or Hindi, matching the user>"}\n'
@@ -241,7 +275,10 @@ def classify_intent(user_message: str, forced_lang: str | None = None) -> dict:
         "courses with (e.g. 'instagram', 'marketing', 'entrepreneur'), or an empty string "
         'if they just want to see what\'s available in general>"}\n'
         '- bundle_info: {"type": "bundle_info", "reply": "<short acknowledgement that you\'re '
-        'pulling up the bundles, in English or Hindi>"}'
+        'pulling up the bundles, in English or Hindi>"}\n'
+        '- verify_certificate: {"type": "verify_certificate", "certificate_number": "<the '
+        'certificate number if they already gave it in this message, else an empty string>"}\n'
+        '- site_question: {"type": "site_question"}'
     )
     raw = _chat(
         [{"role": "system", "content": system}, {"role": "user", "content": user_message}],
@@ -410,7 +447,8 @@ def phrase_message(intent_description: str, context: str = "", forced_lang: str 
         "You write short, warm, simple messages (1-2 sentences) for a chatbot on Rozzgaar, "
         "a skills-course website, for users who may not read/write well. This assistant "
         "supports ONLY English and Hindi (Devanagari or romanized Hinglish both count as "
-        f"Hindi). {_lang_instruction(forced_lang)} No jargon."
+        f"Hindi). {_lang_instruction(forced_lang)} No jargon. Plain text only — no Markdown "
+        "(no **, *, __, backticks, or # headers)."
     )
     user = f"User's message (match this language): {context}\n\nWrite this message: {intent_description}"
     return _chat(
@@ -440,7 +478,8 @@ def summarize_site_overview(
         "roughly how many courses are on offer and name 2-3 real ones, mention that bundles "
         "exist as a cheaper combo option, and mention certificates are earned after a quiz. "
         "Do NOT list every course/bundle or dump raw data — this is a tour, not a "
-        "catalogue. If the data is empty, say so plainly and point them to rozzgaar.in."
+        "catalogue. Plain text only — no Markdown (no **, *, __, backticks, or # headers). "
+        "If the data is empty, say so plainly and point them to rozzgaar.in."
     )
     data_preview = json.dumps(
         {"courses": courses[:20], "bundles": bundles[:10]}, default=str
@@ -452,6 +491,72 @@ def summarize_site_overview(
     )
 
 
+def summarize_static_overview(user_message: str, static_text: str, forced_lang: str | None = None) -> str:
+    """Used ONLY when the real course/bundle APIs are unreachable (see
+    static_content.py) — "Explore" still needs to say something real, so
+    this summarizes raw text crawled directly from rozzgaar.in's own
+    home/about/contact pages instead of the live catalogue."""
+    system = (
+        "You give a short, high-level overview of what Rozzgaar (rozzgaar.in) offers, to "
+        "someone who just tapped 'Explore'. This assistant supports ONLY English and Hindi "
+        "(Devanagari or romanized Hinglish both count as Hindi). "
+        f"{_lang_instruction(forced_lang)}\n\n"
+        "IMPORTANT: the live course/bundle listing API is unreachable right now, so you do "
+        "NOT have real-time course names, prices, or counts — never invent any. Below is raw "
+        "text crawled just now directly from rozzgaar.in's own home/about/contact pages. Using "
+        "ONLY that text, write ONE SHORT, warm, conversational overview (3-5 sentences) of what "
+        "Rozzgaar is and what it offers (e.g. entrepreneurship/skill training, certifications), "
+        "then clearly mention that the live course list can't be pulled up right this moment "
+        "and point them to rozzgaar.in/courses to browse directly. You may mention the contact "
+        "email/address from the text if it's naturally relevant. No jargon, no raw text dumps, "
+        "no markdown formatting (no **, *, __, backticks, or # headers), "
+        "no invented facts beyond what's in the crawled text."
+    )
+    user = (
+        f"User's message: \"{user_message}\"\n\n"
+        f"Text crawled from rozzgaar.in:\n{static_text[:6000]}\n\n"
+        "Write the overview now."
+    )
+    return _chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        temperature=0.4,
+    )
+
+
+def answer_from_site(user_message: str, site_text: str, forced_lang: str | None = None) -> str:
+    """General-purpose Q&A for anything asked about Rozzgaar that isn't a
+    specific course/bundle lookup or an account action — see
+    main.py._handle_site_question(). Answers ONLY using text crawled
+    directly off rozzgaar.in itself (see static_content.py); a wrong or
+    missing answer here means "not on the site", never an invented fact."""
+    system = (
+        "You answer questions about Rozzgaar (rozzgaar.in) using ONLY the text provided "
+        "below, which was crawled directly off the real website just now. This assistant "
+        "supports ONLY English and Hindi (Devanagari or romanized Hinglish both count as "
+        f"Hindi). {_lang_instruction(forced_lang)}\n\n"
+        "Rules:\n"
+        "- Answer in 1-4 short, plain, conversational sentences. No jargon, no raw text "
+        "dumps, no markdown, no bullet lists.\n"
+        "- Use ONLY facts that actually appear in the crawled text below — never invent or "
+        "assume anything not there (no made-up prices, numbers, policies, or dates).\n"
+        "- If the crawled text genuinely doesn't answer the question, say plainly that you "
+        "don't have that information, and point them to rozzgaar.in directly (mentioning "
+        "the contact email/address from the text if one appears there).\n"
+        "- If the question is really about a specific course/bundle price or availability, "
+        "or an account action (register/login/password), gently redirect them to ask that "
+        "directly instead of guessing from this text."
+    )
+    user = (
+        f"User's question: \"{user_message}\"\n\n"
+        f"Text crawled from rozzgaar.in:\n{site_text[:8000]}\n\n"
+        "Answer now."
+    )
+    return _chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        temperature=0.2,
+    )
+
+
 def summarize_courses(user_message: str, courses: list, forced_lang: str | None = None) -> str:
     """Turns raw course-list API rows into one short, human, plain-language answer."""
     system = (
@@ -460,12 +565,13 @@ def summarize_courses(user_message: str, courses: list, forced_lang: str | None 
         f"romanized Hinglish both count as Hindi). {_lang_instruction(forced_lang)} Write a "
         "SHORT, clear, conversational summary (2-5 sentences) "
         "answering their question directly, mentioning real course names/prices from the "
-        "data. No jargon, no raw JSON. If there are no results, say so plainly and suggest "
+        "data. No jargon, no raw JSON. Plain text only — no Markdown (no **, *, __, "
+        "backticks, or # headers). If there are no results, say so plainly and suggest "
         "browsing all courses instead."
     )
     data_preview = json.dumps(courses[:20], default=str)
     user = f"User's question: \"{user_message}\"\nCourse data (up to 20 shown): {data_preview}\n\nWrite the summary now."
     return _chat(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        temperature=0.3,
+        temperature=0.1,
     )
