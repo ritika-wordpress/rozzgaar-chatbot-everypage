@@ -1,168 +1,152 @@
 /**
- * embed.js
- * --------
- * Drop this one script tag on any page of rozzgaar.in to load the Rozzgaar
- * chat assistant as a floating widget:
+ * Rozzgaar Chatbot — embed loader (no iframe).
  *
- *   <script src="https://chatbot.rozzgaar.in/embed.js"
- *           data-base-url="https://chatbot.rozzgaar.in"></script>
+ * Include this one file on any rozzgaar.in page:
  *
- * It does NOT talk to the chat backend directly — it just injects a
- * launcher button + an iframe pointing at this project's own index.html
- * (with ?embedded=1, which index.html/script.js already understand: it
- * auto-opens inside the iframe and hides its own internal launcher, since
- * THIS script draws the launcher on the host page instead). The iframe is
- * created once, up front, and only shown/hidden after that — never
- * destroyed — so the chat session (kept in the iframe's own sessionStorage)
- * survives being minimized and reopened.
+ *   <script src="https://chatbot.rozzgaar.in/embed.js" async></script>
  *
- * Config (all optional):
- *   - <script data-base-url="https://...">  — where index.html/style.css/
- *     assets/ live. Defaults to the directory this embed.js file itself
- *     was loaded from, so if embed.js and index.html are deployed together
- *     you don't need to set anything.
- *   - window.ROZZGAAR_CHATBOT_CONFIG = { baseUrl, zIndex }  — same, plus an
- *     optional stacking context override if the host page has its own
- *     high z-index elements (e.g. modals) that this widget must sit above
- *     or below.
+ * An earlier version of this loader put the widget in an iframe pointed
+ * at chatbot.rozzgaar.in — but that subdomain isn't set up to allow
+ * being framed, so the iframe just rendered blank. This version instead
+ * mounts the real widget (same markup, same style.css, same script.js
+ * used on chatbot.rozzgaar.in's own page) directly onto the host page,
+ * inside a Shadow DOM root so its CSS can't leak onto — or be clobbered
+ * by — the host page's own styles.
  *
- * Safe to include on every page (guards against double-init if the tag
- * ever ends up on the page twice).
+ * script.js is unchanged apart from one thing: it now looks elements up
+ * through `window.ROZZGAAR_WIDGET_ROOT` instead of hardcoding `document`,
+ * falling back to `document` when that global isn't set (i.e. when it's
+ * loaded normally by chatbot.rozzgaar.in/index.html). That's set below,
+ * before script.js is loaded, so the exact same file runs in both places.
  */
 (function () {
     "use strict";
 
+    // Where the chatbot's static assets (style.css, script.js, config.js,
+    // icons) are hosted. Update this if the subdomain ever changes.
+    var CHATBOT_ORIGIN = "https://chatbot.rozzgaar.in";
+
+    // Pages where the widget should not appear at all. Mirrors
+    // CONFIG.EXCLUDED_PAGES in frontend/config.js — keep both in sync.
+    var EXCLUDED_PAGES = [
+        {
+            path: "/applicant/course-content",
+            params: { slug: "green-jobs-edp" }
+        }
+    ];
+
+    function isExcludedPage() {
+        var loc = window.location;
+        var currentParams = new URLSearchParams(loc.search);
+
+        return EXCLUDED_PAGES.some(function (entry) {
+            if (loc.pathname !== entry.path) {
+                return false;
+            }
+            if (!entry.params) {
+                return true;
+            }
+            return Object.keys(entry.params).every(function (key) {
+                return currentParams.get(key) === entry.params[key];
+            });
+        });
+    }
+
+    if (isExcludedPage()) {
+        return;
+    }
+
+    // Don't double-inject if the script is somehow included twice.
     if (window.__rozzgaarChatbotEmbedded) {
         return;
     }
     window.__rozzgaarChatbotEmbedded = true;
 
-    // ===================== Resolve config =====================
-
-    var userConfig = window.ROZZGAAR_CHATBOT_CONFIG || {};
-
-    var thisScript =
-        document.currentScript ||
-        (function () {
-            // Fallback for older browsers: last <script src="...embed.js">
-            // on the page at the time this IIFE runs.
-            var scripts = document.getElementsByTagName("script");
-            for (var i = scripts.length - 1; i >= 0; i--) {
-                if (/embed\.js(\?|#|$)/.test(scripts[i].src)) {
-                    return scripts[i];
-                }
-            }
-            return null;
-        })();
-
-    function deriveBaseUrl() {
-        if (userConfig.baseUrl) return userConfig.baseUrl;
-
-        if (thisScript && thisScript.getAttribute("data-base-url")) {
-            return thisScript.getAttribute("data-base-url");
-        }
-
-        if (thisScript && thisScript.src) {
-            // Strip "embed.js" (plus any query string) off the script's
-            // own URL to get the directory it's served from.
-            return thisScript.src.replace(/embed\.js(\?.*)?$/, "");
-        }
-
-        // Last resort — same origin, root path.
-        return "/";
-    }
-
-    var BASE_URL = deriveBaseUrl().replace(/\/+$/, "");
-    var Z_INDEX = userConfig.zIndex || 999999;
-    var WIDGET_SRC = BASE_URL + "/index.html?embedded=1";
-    var LAUNCHER_ICON_SRC = BASE_URL + "/assets/rozzgaar-icon.png";
-
-    // ===================== Inject scoped styles =====================
-    // Prefixed classes so nothing here collides with the host page's CSS.
-
-    var style = document.createElement("style");
-    style.textContent = [
-        "#rzg-embed-launcher {",
-        "  position: fixed; right: 24px; bottom: 24px;",
-        "  width: 58px; height: 58px; border-radius: 50%;",
-        "  border: 3px solid #C0392B; background: #fff;",
-        "  cursor: pointer; padding: 0;",
-        "  box-shadow: 0 10px 26px rgba(0,0,0,0.28);",
-        "  display: flex; align-items: center; justify-content: center;",
-        "  z-index: " + Z_INDEX + ";",
-        "  transition: transform 0.15s ease;",
-        "}",
-        "#rzg-embed-launcher:hover { transform: scale(1.06); }",
-        "#rzg-embed-launcher.rzg-hidden { display: none; }",
-        "#rzg-embed-launcher img { width: 34px; height: 34px; display: block; pointer-events: none; }",
-        "#rzg-embed-frame {",
-        "  position: fixed; right: 20px; bottom: 20px;",
-        "  width: 380px; height: 560px;",
-        "  max-width: calc(100vw - 24px); max-height: calc(100vh - 24px);",
-        "  border: 0; border-radius: 14px;",
-        "  box-shadow: 0 16px 40px rgba(0,0,0,0.22);",
-        "  z-index: " + Z_INDEX + ";",
-        "  background: transparent;",
-        "  display: none;",
-        "}",
-        "#rzg-embed-frame.rzg-open { display: block; }",
-        "@media (max-width: 420px) {",
-        "  #rzg-embed-frame {",
-        "    right: 0; bottom: 0; left: 0; top: 0;",
-        "    width: 100%; height: 100%;",
-        "    max-width: 100%; max-height: 100%;",
-        "    border-radius: 0;",
-        "  }",
-        "  #rzg-embed-launcher { right: 16px; bottom: 16px; }",
-        "}",
+    // Same markup as chatbot.rozzgaar.in/index.html's <body>, minus the
+    // <script> tags (loaded separately below, in order). Asset paths are
+    // rewritten to absolute chatbot.rozzgaar.in URLs since this HTML is
+    // inserted into the host page rather than served from that origin.
+    var WIDGET_HTML = [
+        '<link rel="stylesheet" href="' + CHATBOT_ORIGIN + '/style.css">',
+        '<button type="button" id="launcherBtn" class="launcher-btn" aria-label="Open Rozzgaar chat assistant">',
+        '  <img src="' + CHATBOT_ORIGIN + '/assets/rozzgaar-icon.png" alt="" class="launcher-icon" />',
+        '</button>',
+        '<div class="app" id="app">',
+        '  <header class="topbar">',
+        '    <div class="brand">',
+        '      <span class="brand-dot"><img src="' + CHATBOT_ORIGIN + '/assets/rozzgaar-icon.png" alt="Rozzgaar" class="brand-logo" /></span>',
+        '      <div class="brand-text">',
+        '        <span class="brand-name" id="brandName">Saarthi</span>',
+        '        <span class="status" id="status"><span class="status-dot" id="statusDot"></span><span id="statusText">connecting…</span></span>',
+        '      </div>',
+        '    </div>',
+        '    <div class="topbar-right">',
+        '      <button type="button" id="langToggleBtn" class="icon-btn small lang-toggle-btn" title="Switch to Hindi" aria-label="Switch to Hindi">हिं</button>',
+        '      <button type="button" id="stopSpeakingBtn" class="icon-btn small stop-speaking-btn" title="Stop speaking" aria-label="Stop speaking" disabled>',
+        '        <svg class="speak-icon-triangle" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 4.5v15l14-7.5-14-7.5z"/></svg>',
+        '        <svg class="speak-icon-square" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg>',
+        '      </button>',
+        '      <button type="button" id="minimizeBtn" class="icon-btn small minimize-btn" title="Minimize" aria-label="Minimize">',
+        '        <svg class="minimize-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+        '      </button>',
+        '    </div>',
+        '  </header>',
+        '  <nav class="sticky-actions" id="stickyActions" aria-label="Chatbot quick actions">',
+        '    <button type="button" id="stickyLoginBtn" class="sticky-action-btn">🔑 Login</button>',
+        '    <button type="button" id="stickyRegisterBtn" class="sticky-action-btn">📝 Register</button>',
+        '    <button type="button" id="stickyExploreBtn" class="sticky-action-btn">📚 Explore</button>',
+        '  </nav>',
+        '  <div class="chat-body" id="chatBody">',
+        '    <main class="chat" id="chat"></main>',
+        '    <form class="composer" id="composer">',
+        '      <input type="text" id="input" placeholder="Type your message here…" autocomplete="off" />',
+        '      <button type="button" id="micBtn" class="icon-btn" title="Speak instead of typing">',
+        '        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">',
+        '          <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+        '          <path d="M19 11a7 7 0 0 1-14 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+        '          <path d="M12 18v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+        '        </svg>',
+        '      </button>',
+        '      <button type="submit" class="send-btn" id="sendBtn" title="Send" aria-label="Send">',
+        '        <svg class="send-icon-triangle" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 4.5v15l14-7.5-14-7.5z"/></svg>',
+        '      </button>',
+        '    </form>',
+        '  </div>',
+        '</div>',
+        '<div id="toastContainer"></div>'
     ].join("\n");
-    document.head.appendChild(style);
 
-    // ===================== Build launcher + iframe =====================
-
-    var launcher = document.createElement("button");
-    launcher.type = "button";
-    launcher.id = "rzg-embed-launcher";
-    launcher.setAttribute("aria-label", "Open Rozzgaar chat assistant");
-
-    var icon = document.createElement("img");
-    icon.src = LAUNCHER_ICON_SRC;
-    icon.alt = "";
-    launcher.appendChild(icon);
-
-    var frame = document.createElement("iframe");
-    frame.id = "rzg-embed-frame";
-    frame.src = WIDGET_SRC;
-    frame.title = "Rozzgaar chat assistant";
-    frame.setAttribute("allow", "microphone; autoplay");
-
-    function openWidget() {
-        frame.classList.add("rzg-open");
-        launcher.classList.add("rzg-hidden");
+    function loadScript(src) {
+        return new Promise(function (resolve, reject) {
+            var s = document.createElement("script");
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = function () {
+                reject(new Error("Failed to load " + src));
+            };
+            document.body.appendChild(s);
+        });
     }
-
-    function closeWidget() {
-        frame.classList.remove("rzg-open");
-        launcher.classList.remove("rzg-hidden");
-    }
-
-    launcher.addEventListener("click", openWidget);
-
-    // The iframe's own script.js (embedded mode) posts this back to us
-    // when the user taps its ➖ minimize button.
-    window.addEventListener("message", function (event) {
-        if (
-            event.data &&
-            event.data.type === "ROZZGAAR_CHATBOT_MINIMIZE" &&
-            event.source === frame.contentWindow
-        ) {
-            closeWidget();
-        }
-    });
 
     function mount() {
-        document.body.appendChild(frame);
-        document.body.appendChild(launcher);
+        var host = document.createElement("div");
+        host.id = "rzg-embed-host";
+        document.body.appendChild(host);
+
+        var shadow = host.attachShadow({ mode: "open" });
+        shadow.innerHTML = WIDGET_HTML;
+
+        // config.js's isExcludedPage() and script.js's element lookups
+        // both need to find things inside this shadow tree from here on.
+        window.ROZZGAAR_WIDGET_ROOT = shadow;
+
+        loadScript(CHATBOT_ORIGIN + "/config.js")
+            .then(function () {
+                return loadScript(CHATBOT_ORIGIN + "/script.js");
+            })
+            .catch(function (err) {
+                console.error("Rozzgaar chatbot failed to load:", err);
+            });
     }
 
     if (document.body) {

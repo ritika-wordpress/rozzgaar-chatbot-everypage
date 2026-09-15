@@ -1,3 +1,11 @@
+// ===================== Widget Root =====================
+// When this file is loaded directly on index.html, ROZZGAAR_ROOT is just
+// `document`, same as always. When embed.js mounts the widget into a
+// Shadow DOM on a host page (to keep styles isolated, no iframe), it sets
+// window.ROZZGAAR_WIDGET_ROOT to that shadow root *before* this script
+// runs, and every getElementById lookup below resolves within it instead.
+const ROZZGAAR_ROOT = window.ROZZGAAR_WIDGET_ROOT || document;
+
 // ===================== Configuration =====================
 // Load config
 // NOTE: named APP_CONFIG, not CONFIG — config.js already declares a global
@@ -37,10 +45,10 @@ const API_CONFIG = {
     ) {
 
         const launcher =
-            document.getElementById("launcherBtn");
+            ROZZGAAR_ROOT.getElementById("launcherBtn");
 
         const appEl =
-            document.getElementById("app");
+            ROZZGAAR_ROOT.getElementById("app");
 
         if (launcher)
             launcher.style.display = "none";
@@ -55,51 +63,51 @@ const API_CONFIG = {
     // ===================== DOM Elements =====================
 
     const chat =
-        document.getElementById("chat");
+        ROZZGAAR_ROOT.getElementById("chat");
 
     const form =
-        document.getElementById("composer");
+        ROZZGAAR_ROOT.getElementById("composer");
 
     const input =
-        document.getElementById("input");
+        ROZZGAAR_ROOT.getElementById("input");
 
     const statusEl =
-        document.getElementById("status");
+        ROZZGAAR_ROOT.getElementById("status");
 
     const statusTextEl =
-        document.getElementById("statusText");
+        ROZZGAAR_ROOT.getElementById("statusText");
 
     const brandNameEl =
-        document.getElementById("brandName");
+        ROZZGAAR_ROOT.getElementById("brandName");
 
     const micBtn =
-        document.getElementById("micBtn");
+        ROZZGAAR_ROOT.getElementById("micBtn");
 
     const sendBtn =
-        document.getElementById("sendBtn");
+        ROZZGAAR_ROOT.getElementById("sendBtn");
 
     const launcherBtn =
-        document.getElementById("launcherBtn");
+        ROZZGAAR_ROOT.getElementById("launcherBtn");
 
     const minimizeBtn =
-        document.getElementById("minimizeBtn");
+        ROZZGAAR_ROOT.getElementById("minimizeBtn");
 
     const stopSpeakingBtn =
-        document.getElementById("stopSpeakingBtn");
+        ROZZGAAR_ROOT.getElementById("stopSpeakingBtn");
 
     const appEl =
-        document.getElementById("app");
+        ROZZGAAR_ROOT.getElementById("app");
 
 
     // Persistent top actions
     const stickyLoginBtn =
-        document.getElementById("stickyLoginBtn");
+        ROZZGAAR_ROOT.getElementById("stickyLoginBtn");
 
     const stickyRegisterBtn =
-        document.getElementById("stickyRegisterBtn");
+        ROZZGAAR_ROOT.getElementById("stickyRegisterBtn");
 
     const stickyExploreBtn =
-        document.getElementById("stickyExploreBtn");
+        ROZZGAAR_ROOT.getElementById("stickyExploreBtn");
 
 
     // ===================== App State =====================
@@ -338,7 +346,7 @@ const API_CONFIG = {
     ) {
 
         let container =
-            document.getElementById(
+            ROZZGAAR_ROOT.getElementById(
                 "toastContainer"
             );
 
@@ -353,7 +361,10 @@ const API_CONFIG = {
             container.id =
                 "toastContainer";
 
-            document.body.appendChild(
+            // ROZZGAAR_ROOT.body exists in normal (document) mode; a
+            // ShadowRoot has no .body, so this falls back to appending
+            // directly onto the shadow root itself in embedded mode.
+            (ROZZGAAR_ROOT.body || ROZZGAAR_ROOT).appendChild(
                 container
             );
         }
@@ -1601,7 +1612,7 @@ const API_CONFIG = {
     // ===================== Language Toggle =====================
 
     const langToggleBtn =
-        document.getElementById(
+        ROZZGAAR_ROOT.getElementById(
             "langToggleBtn"
         );
 
