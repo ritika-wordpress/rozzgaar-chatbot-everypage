@@ -1088,7 +1088,7 @@ def _check_payment(state: dict, forced_lang: str | None):
             "en": "I don't have a payment in progress to check right now. Would you like to explore courses?",
             "hi": "अभी जाँचने के लिए कोई पेमेंट प्रगति में नहीं है। क्या आप कोर्स देखना चाहेंगे?",
         }.get(forced_lang or "en")
-        return text, LOGGED_IN_QUICK_REPLIES, None
+        return text, None, None  # no unprompted menu — sticky bar covers Login/Register/Explore
 
     try:
         data = rozzgaar_api.my_enrollments(state["token"])
@@ -1109,7 +1109,7 @@ def _check_payment(state: dict, forced_lang: str | None):
             "en": "✅ Payment confirmed — you're now enrolled! You can start learning anytime from your dashboard.",
             "hi": "✅ पेमेंट कन्फर्म हो गया — आप अब एनरोल हो चुके हैं! आप कभी भी अपने डैशबोर्ड से पढ़ाई शुरू कर सकते हैं।",
         }.get(forced_lang or "en")
-        return text, LOGGED_IN_QUICK_REPLIES, None
+        return text, None, None  # no unprompted menu — sticky bar covers Login/Register/Explore
 
     text = {
         "en": "⚠️ I don't see the payment confirmed yet — it may still be processing, or it may not have gone through. "
@@ -1163,7 +1163,7 @@ def chat(req: ChatRequest):
                 "Tell the user they've been logged out, and ask what they'd like to do next.",
                 context=message, forced_lang=forced_lang,
             )
-            quick_replies = GUEST_QUICK_REPLIES
+            quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
 
         # --- "I've completed payment" — check it directly, before anything
         # else, since it's a fixed button marker, not free text.
@@ -1205,7 +1205,7 @@ def chat(req: ChatRequest):
             state["awaiting_certificate_number"] = False
             cert_number = _extract_certificate_number(message)
             reply, course_cards = _handle_verify_certificate(message, cert_number, forced_lang=forced_lang)
-            quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+            quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
 
         elif state["flow"]:
             reply, awaiting, redirect = _continue_flow(req.session_id, state, message)
@@ -1224,7 +1224,7 @@ def chat(req: ChatRequest):
                 # The flow just ended (cancelled, or finished) with nothing
                 # else in progress — show the normal menu again instead of
                 # leaving the user with no obvious next step.
-                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
 
         else:
             # A couple of fixed quick-reply messages are matched directly
@@ -1246,12 +1246,12 @@ def chat(req: ChatRequest):
 
             elif message.strip().lower() == "show me all courses":
                 reply, course_cards = _handle_course_info("", message, forced_lang=forced_lang)
-                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
                 awaiting = None
 
             elif message.strip().lower() == "show me all bundles":
                 reply, course_cards = _handle_bundle_info(message, forced_lang=forced_lang)
-                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
                 awaiting = None
 
             elif message.strip().lower() == "about rozzgaar":
@@ -1259,7 +1259,7 @@ def chat(req: ChatRequest):
                     "Tell me about Rozzgaar — what it is, who runs it, and what it offers.",
                     forced_lang=forced_lang,
                 )
-                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
                 awaiting = None
 
             elif message.strip().lower() == "contact rozzgaar":
@@ -1267,7 +1267,7 @@ def chat(req: ChatRequest):
                     "What are Rozzgaar's contact details — email, address, and office hours?",
                     forced_lang=forced_lang,
                 )
-                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
                 awaiting = None
 
             elif message.strip().lower() == "verify certificate":
@@ -1278,7 +1278,7 @@ def chat(req: ChatRequest):
                     context=message, forced_lang=forced_lang,
                 )
                 awaiting = "certificate_number"
-                quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
 
             elif message.strip().lower() == "show my enrollments":
                 if not logged_in:
@@ -1305,7 +1305,7 @@ def chat(req: ChatRequest):
                         )
                     else:
                         reply = llm.summarize_courses(message, enrollments, forced_lang=forced_lang)
-                    quick_replies = LOGGED_IN_QUICK_REPLIES
+                    quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
                     awaiting = None
             else:
                 route = llm.classify_intent(message, forced_lang=forced_lang)
@@ -1313,7 +1313,7 @@ def chat(req: ChatRequest):
 
                 if kind in ("greeting", "about_bot"):
                     reply, awaiting = route.get("reply", "Could you say that again?"), None
-                    quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                    quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
 
                 elif kind == "register":
                     _start_flow(state, "register")
@@ -1359,7 +1359,7 @@ def chat(req: ChatRequest):
                     # _handle_site_question().
                     reply, course_cards = _handle_site_question(message, forced_lang=forced_lang)
                     awaiting = None
-                    quick_replies = LOGGED_IN_QUICK_REPLIES if logged_in else GUEST_QUICK_REPLIES
+                    quick_replies = None  # no unprompted menu — sticky bar covers Login/Register/Explore
 
         # Voice language: if the user picked a language at the gate, use
         # that directly rather than re-detecting from the reply text (which
