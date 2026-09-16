@@ -453,7 +453,7 @@ body {
   flex: 1;
   font-size: 14px;
   padding: 9px 14px;
-  border: 1px solid #E4D9CB;
+  border: 1px solid var(--ink);
   border-radius: 20px;
   outline: none;
   background: var(--bg);
@@ -468,8 +468,9 @@ body {
 #input::placeholder { color: #B8A99A; transition: opacity 0.2s ease; }
 #input:hover { border-color: var(--accent-soft); }
 #input:focus {
-  border-color: var(--accent-soft);
+  border-color: #C0392B;
   background: var(--panel);
+  animation: mic-pulse-ring 1.4s ease-out infinite;
 }
 #input:focus::placeholder { opacity: 0.6; }
 
@@ -501,7 +502,7 @@ body {
   transition: transform 0.18s ease;
 }
 .send-btn:hover .send-icon-triangle { transform: translateX(1px); }
-.send-btn:focus-visible, .icon-btn:focus-visible, #input:focus-visible {
+.send-btn:focus-visible, .icon-btn:focus-visible {
   outline: 3px solid var(--ink-soft);
   outline-offset: 2px;
 }
